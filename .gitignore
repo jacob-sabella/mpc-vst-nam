@@ -1,4 +1,42 @@
-/build/
-/dist/
+# Build output (vst/build.sh, vst/gen_skin.sh, CI staging)
+build/
+dist/
+*.o
+*.a
+*.so
+*.so.*
+*.tar.gz
+*.zip
+
+# NAM captures, cab IRs and downloaded packs are user content, not source
+*.nam
+*.wav
+models/
+models-removed/
+cabs/
+favorites.txt
+
+# Credentials and device state: Tone3000 tokens/client config, keys, env files
+tokens.json
+nam-tone3000/
+*.pem
+*.key
+.env
+.env.*
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+.venv/
+venv/
+
+# Editors, OS and tooling
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.claude/
+*.log

@@ -1,7 +1,7 @@
 """Post-build pass over the generated NAM skin:
 - replaces the stock knob filmstrips with the synthwave knob (270-degree track, lit magenta value arc
   with a soft glow, dark face, cyan pointer);
-- removes the Q-Link zone outline for good (see hide_qlink_bounds()).
+- hides the Q-Link zone outline on every page (see hide_qlink_bounds()).
 
 Runs after gen_vst.py (vst/gen_skin.sh does both):  python3 vst/skin_post.py <Plugin Skins dir>
 Each strip keeps the generator's own geometry (square frames stacked vertically, frame count from the
@@ -80,11 +80,10 @@ def rebuild_strip(path):
 
 
 def hide_qlink_bounds(skin):
-    """MPC still drew the orange Q-Link box + "Q" badge now and then with layout.conf's
-    hide_qlink_bounds=1, which only flags the page components: the nested per-control components keep
-    hideQLinkBounds=false, and each page still carries the zone rectangle (qlinkBoundsData). Every tab
-    here has one Q-Link bank, so there is nothing for the box to disambiguate: flag every component and
-    give each page an empty zone."""
+    """Hide the orange Q-Link box and "Q" badge. layout.conf's hide_qlink_bounds=1 flags only the page
+    components; the nested per-control components keep hideQLinkBounds=false and each page keeps its
+    zone rectangle (qlinkBoundsData), so MPC can still draw the box. Every tab has one Q-Link bank, so
+    the box carries no information: flag every component and give each page an empty zone."""
     path = os.path.join(skin, "TUI.json")
     tui = json.load(open(path))
     flags = [0]

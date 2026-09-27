@@ -1,4 +1,4 @@
-# Build Neural Amp Modeler into a DRAFT release (nam-vst-v<version>) with mpc-vst-plugins' shared
+# Build NAM into a DRAFT release (nam-vst-v<version>) with mpc-vst-plugins' shared
 # workflow: Actions -> "VST release (draft)" -> Run workflow. Then install that draft's zip on a
 # device, smoke-test it, and publish the draft (see mpc-vst-plugins docs/RELEASING.md).
 # dry_run builds the zip and skin previews as run artifacts only.
@@ -16,7 +16,7 @@ on:
         default: false
 
 jobs:
-  neural-amp-modeler:
+  nam:
     uses: sd88me/mpc-vst-plugins/.github/workflows/vst-release.yml@39660f2b41c0a6d6e9f8c1f0e19378533d9bbc2f
     permissions:
       contents: write

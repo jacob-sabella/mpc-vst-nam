@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Neural Amp Modeler as a VST2 effect for the MPC OS plugin host (armhf, RK3288 Cortex-A17).
+# Build NAM (Neural Amp Modeler) as a VST2 effect for the MPC OS plugin host (armhf, RK3288 Cortex-A17).
 #   vst/build/nam_vst.so              -> the directory in pluginlist-entry.xml's file="..." on the device
 #   vst/build/pluginlist-entry.xml    the <PLUGIN> line for MPC.settings' pluginList-arm
 #   vst/build/bench                   on-device CPU benchmark (see README "CPU")

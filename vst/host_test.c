@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
         double a = fabs(oL[i]);
         if (a > peak) peak = a;
         energy += oL[i] * oL[i];
-        if (oL[i] != oR[i]) fail = 1;   /* wrapper duplicates mono to L/R */
+        if (oL[i] != oR[i]) fail = 1;   /* the plugin duplicates mono to L/R */
     }
     printf("nonfinite  = %d %s\n", nonfinite, nonfinite ? "BAD" : "ok");
     printf("out peak   = %.5f, energy = %.5f %s\n", peak, energy,

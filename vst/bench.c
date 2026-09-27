@@ -49,8 +49,7 @@ int main(int argc, char **argv) {
     e->dispatcher(e, effSetBlockSize, 0, block, 0, 0);
     e->dispatcher(e, effMainsChanged, 0, 1, 0, 0);
 
-    /* Model index -> normalized P_MODEL value (count from the param display is overkill; the
-     * caller passes the model count as NAM_BENCH_COUNT). */
+    /* Model index -> normalized P_MODEL value; NAM_BENCH_COUNT gives the number of models. */
     int count = getenv("NAM_BENCH_COUNT") ? atoi(getenv("NAM_BENCH_COUNT")) : 1;
     for (int a = 5; a < argc; a++) { int p; float v; if (sscanf(argv[a], "%d=%f", &p, &v) == 2) e->setParameter(e, p, v); }
     e->setParameter(e, 0, count > 1 ? (float)model / (count - 1) : 0.f);

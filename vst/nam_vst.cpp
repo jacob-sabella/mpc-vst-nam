@@ -10,11 +10,9 @@
  * Treble) -> Cab IR (optional convolution) -> Pitch Shift (optional) -> Delay (optional) ->
  * Reverb (optional) -> Output Gain -> dup to L/R.
  *
- * Params (stable, APPEND-ONLY -- MPC stores automation/Q-Link mappings by index, so existing
- * indices 0..2 must never move or change meaning): see the P_* enum below. Everything past
- * Output Gain was added in the "fully featured" pass and defaults to a transparent/off state, so
- * old projects/skins built against the first 3 params still sound the same until the new blocks
- * are engaged.
+ * Params: see the P_* enum below. The list is append-only -- MPC stores automation and Q-Link
+ * mappings by index, so an existing index must never move or change meaning. Every block after
+ * the model defaults to a transparent/off state.
  *
  * Models are discovered at load in the first existing of: $NAM_MODELS_DIR, <dir of this .so>/models,
  * /media/0180-2800/nam-host/models, /media/acvs-content/nam-host/models. Cab IRs use the same
@@ -29,8 +27,7 @@
  * The selected model and cab IR are saved by NAME (survives directory reordering/reinstalls); every
  * other parameter is saved by index as plain text key=value lines in the VST2 chunk (effFlagsProgramChunks
  * means the host defers ALL state to this chunk, not just per-index automation, so every knob must be
- * included here for save/reload to round-trip). A bare-string chunk with no '=' is read as a legacy
- * (model-name-only) chunk for graceful degradation.
+ * included here for save/reload to round-trip). A chunk with no '=' is read as a bare model name.
  */
 #include <cstdint>
 #include <cstdlib>
@@ -95,8 +92,8 @@ enum {
 enum { effFlagsCanReplacing = 1 << 4, effFlagsProgramChunks = 1 << 5 };
 enum { audioMasterUpdateDisplay = 42 };
 
-#define PLUG_NAME    "Neural Amp Modeler"
-#define PLUG_VENDOR  "nam-jam interop"
+#define PLUG_NAME    "NAM"
+#define PLUG_VENDOR  "jacob-sabella"
 #define PLUG_VERSION 1100
 #define PLUG_UID     0x4E416D31 /* 'NAm1' -- keep fixed across versions; projects find the plugin by uid */
 #define MAXBLOCK     4096
@@ -114,11 +111,10 @@ enum {
      * "<key>_prev"/"<key>_next" convention) -- Model/Cab IR are non-knob list browsers on screen,
      * not automatable knobs, so they need a distinct prev/next VST param pair each. */
     P_MODEL_PREV, P_MODEL_NEXT, P_CAB_PREV, P_CAB_NEXT,
-    /* Model browser (BROWSE tab): 8 slot params exist for index stability, but only the first
-     * SLOTS_PER_PAGE are ever bound to a visible row by the skin (see layout.conf) -- P_SLOT_7/8
-     * are unused dead params, kept so existing saved projects don't have their param indices shift.
-     * Slots read 1.0 for the currently loaded model (tile highlight); a touch loads that row.
-     * Their display text is the model name at browse_page*SLOTS_PER_PAGE + slot, refreshed via updateDisplay. */
+    /* Model browser (BROWSE tab): the skin binds the first SLOTS_PER_PAGE slots to list rows
+     * (layout.conf); P_SLOT_7/8 are unbound and reserved to keep later indices stable.
+     * A slot reads 1.0 when its row holds the loaded model (tile highlight); a tap acts on that row.
+     * Display text is the label of view row browse_page*SLOTS_PER_PAGE + slot. */
     P_SLOT_1, P_SLOT_2, P_SLOT_3, P_SLOT_4, P_SLOT_5, P_SLOT_6, P_SLOT_7, P_SLOT_8,
     P_MODEL_PAGE, P_MODEL_PAGE_PREV, P_MODEL_PAGE_NEXT,
     /* A2 "slimmable" models carry a lite submodel next to the full one; LITE runs the lite one
@@ -146,7 +142,8 @@ enum {
 };
 #define SLOTS_PER_PAGE 6
 #define T3K_SLOTS_PER_PAGE 6
-#define T3K_ROWS 5            /* results per API page = rows the TONE3000 list shows (layout.conf) */
+#define T3K_ROWS 5            /* results per API page = rows the TONE3000 list shows (layout.conf);
+                                 * P_T3K_SLOT_6 is unbound */
 
 static const float GAIN_MIN_DB = -20.f, GAIN_MAX_DB = 20.f;
 static const float GATE_MIN_DB = -80.f, GATE_MAX_DB = 0.f;
@@ -628,7 +625,7 @@ static void set_defaults(Nam *n) {
     n->p[P_DELAY_MIX] = 0.f;
     n->p[P_REVERB_MIX] = 0.f;
     n->p[P_QUALITY] = 0.f;        /* Lite: the full A2 submodel alone is ~90% of a core here */
-    /* trigger buttons start "off" (0.5 read as on, so the first toggle to 1 wasn't a change) */
+    /* trigger buttons start at 0 so the first tap (0 -> 1) registers as a flip */
     for (int t : {P_MODEL_PREV, P_MODEL_NEXT, P_CAB_PREV, P_CAB_NEXT, P_MODEL_PAGE_PREV, P_MODEL_PAGE_NEXT,
                   P_T3K_GEAR_PREV, P_T3K_GEAR_NEXT, P_T3K_MAKE_PREV, P_T3K_MAKE_NEXT,
                   P_T3K_PAGE_PREV, P_T3K_PAGE_NEXT, P_T3K_CONFIRM, P_T3K_CANCEL,
@@ -654,8 +651,8 @@ static void ask_redraw(Nam *n) {
 }
 
 
-/* mtime (ns) mixed with size: whole-second st_mtime missed two writes landing in the same second
- * (e.g. "searching" then "idle"), which left the tab showing a state that had already passed. */
+/* Change key for a small status/result file: nanosecond mtime mixed with size, so two writes
+ * within the same second (e.g. "searching" then "idle") still read as a change. */
 static long long file_key(const char *path) {
     struct stat st;
     if (stat(path, &st) != 0) return -1;
@@ -975,9 +972,8 @@ static void setParameter(AEffect *e, int32_t i, float v) {
     Nam *n = (Nam *)e->object;
     if (i < 0 || i >= NPARAMS) return;
     v = clamp01(v);
-    /* Trigger buttons: MPC's skin Button is a toggle (each tap flips 0<->1, no release event), so a
-     * low->high edge check fired on only every other tap. Any flip of the on/off state is one press
-     * -- the same "any change" convention the list rows already use. */
+    /* Trigger buttons: MPC's skin Button is a toggle (each tap flips 0<->1, no release event), so
+     * any flip of the on/off state counts as one press. */
     bool rising = (i == P_MODEL_PREV || i == P_MODEL_NEXT || i == P_CAB_PREV || i == P_CAB_NEXT ||
                    i == P_MODEL_PAGE_PREV || i == P_MODEL_PAGE_NEXT ||
                    i == P_T3K_GEAR_PREV || i == P_T3K_GEAR_NEXT || i == P_T3K_MAKE_PREV || i == P_T3K_MAKE_NEXT ||
@@ -993,14 +989,10 @@ static void setParameter(AEffect *e, int32_t i, float v) {
         std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
         bool touched = v != prev || rising || (i >= P_SLOT_1 && i <= P_SLOT_8);
         if (touched && i != P_BROWSE_DELETE) { n->del_armed_ms = 0; n->browse_msg.clear(); }
-        /* A row is a toggle -- act on every tap, not just a value change (Crate Digger's slot
-         * convention): a model row loads it, a pack row opens the pack, "< All models" goes back
-         * up. The on-screen toggle latch is shared across pages (6 physical row widgets get
-         * rebound to different view rows as you page), so once a slot's cached value is already
-         * 1.0 from an earlier selection, a later tap on that same slot position can resend 1.0
-         * with no change -- v != prev would miss it. Every setParameter call in this range is a
-         * real screen tap (these indices are excluded from save/restore, so nothing else calls
-         * setParameter on them), so it's safe to act unconditionally. */
+        /* Act on every row tap, not only on a value change: a model row loads it, a pack row opens
+         * the pack, "< All models" goes back up. The six row widgets are rebound to different view
+         * rows as the list pages, so a tap can resend the value the slot already holds. These
+         * indices are excluded from save/restore, so every call here is a real screen tap. */
         if (i >= P_SLOT_1 && i <= P_SLOT_8) {
             int r = n->browse_page * SLOTS_PER_PAGE + (i - P_SLOT_1);
             if (r >= 0 && r < (int)n->view.size()) {
@@ -1262,7 +1254,7 @@ static void processReplacing(AEffect *e, float **in, float **out, int32_t count)
     for (int32_t i = 0; i < count; i++) out[0][i] = out[1][i] = mbuf[i] * og;
 }
 
-/* VST2 legacy process() must ADD to the output buffers. */
+/* VST2 accumulating process(): adds to the output buffers. */
 static void process(AEffect *e, float **in, float **out, int32_t count) {
     std::vector<float> tl((size_t)count), tr((size_t)count);
     float *tmp[2] = {tl.data(), tr.data()};
@@ -1328,8 +1320,8 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
             } else copy_str(p, "", 8);
         }
         else if (idx >= P_T3K_STATUS && idx <= P_T3K_CANCEL) {
-            /* T3K strings get 64 bytes: JUCE's host hands effGetParamDisplay a 256-byte buffer, and
-             * 24 chopped tone names mid-word ("Fender Super Reverb 197"). */
+            /* Tone names and status lines use up to 96 bytes: JUCE's host passes effGetParamDisplay
+             * a 256-byte buffer, and the usual 24 would cut names mid-word. */
             t3k_start(n);
             std::lock_guard<std::recursive_mutex> lk(n->t3k_mtx);
             if (idx == P_T3K_STATUS) copy_str(p, n->t3k_status_text.c_str(), 96);
@@ -1391,7 +1383,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
     case effSetChunk: {
         if (v <= 0) return 0;
         std::string s((const char *)p, std::min((size_t)v, sizeof(n->chunk) - 1));
-        if (s.find('=') == std::string::npos) {   /* legacy chunk: bare model name */
+        if (s.find('=') == std::string::npos) {   /* bare model name */
             for (size_t k = 0; k < n->names.size(); k++)
                 if (n->names[k] == s.substr(0, s.find('\0'))) { load_index(n, (int)k); break; }
             return 1;

@@ -1,4 +1,4 @@
-/* Offline A/B for vst/pitch_shift.h against the previous H910-style shifter.
+/* Offline comparison of vst/pitch_shift.h against a two-tap H910-style reference shifter.
  *   g++ -O2 -std=c++17 -Ivst vst/pitch_test.cpp -o vst/build/pitch_test && vst/build/pitch_test
  * Per shift and signal: output pitch (zero-crossing estimate, sine only), amplitude wobble
  * (max/min of 20ms RMS frames on a steady tone -- comb filtering and splice cancellation show up
@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <functional>
 
-struct OldPitch {   /* the shifter this replaced, with the direction fix applied */
+struct TwoTapPitch {   /* reference: two triangle-windowed taps half a window apart */
     static const int BUF = 4096, WINDOW = 2048;
     std::vector<float> buf = std::vector<float>(BUF, 0.f);
     int writePos = 0;
@@ -82,16 +82,16 @@ int main() {
         for (int h = 1; h <= 30; h++) s += std::sin(2 * M_PI * 110.0 * h * n / SR) / h;
         return (float)(0.3 * s);
     };
-    printf("%7s | %-26s | %-26s | %s\n", "shift", "sine 220Hz: freq / wobble", "  (new)", "saw 110Hz wobble old -> new, new latency");
+    printf("%7s | %-26s | %-26s | %s\n", "shift", "sine 220Hz: freq / wobble", "  (splice)", "saw 110Hz wobble 2-tap -> splice, splice latency");
     for (float st : shifts) {
         double ratio = std::pow(2.0, st / 12.0), fOut = 220.0 * ratio;
-        OldPitch o1, o2; PitchShift n1, n2;
+        TwoTapPitch o1, o2; PitchShift n1, n2;
         Stats so = measure(run(o1, sine, st), fOut);
         double lat = 0;
         Stats sn = measure(run(n1, sine, st, &lat), fOut);
         Stats wo = measure(run(o2, saw, st), 110.0 * ratio);
         Stats wn = measure(run(n2, saw, st), 110.0 * ratio);
-        printf("%+6.1f  | old %7.1fHz %5.1fdB clk%4.1f | new %7.1fHz %5.1fdB clk%4.1f | saw %5.1fdB -> %4.1fdB  %4.1fms  (want %.1fHz)\n",
+        printf("%+6.1f  | 2tap %7.1fHz %5.1fdB clk%4.1f | splice %7.1fHz %5.1fdB clk%4.1f | saw %5.1fdB -> %4.1fdB  %4.1fms  (want %.1fHz)\n",
                st, so.freq, so.wobbleDb, so.click, sn.freq, sn.wobbleDb, sn.click, wo.wobbleDb, wn.wobbleDb, lat, fOut);
     }
 }

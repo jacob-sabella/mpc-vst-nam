@@ -3,10 +3,10 @@
  * normalized cross-correlation so the outgoing and incoming segments line up in phase (the
  * Eventide H949 / AMS "de-glitch" idea, WSOLA-style).
  *
- * This replaces an H910-style shifter (two taps half a window apart, triangle-crossfaded
- * continuously). Two always-audible taps at a fixed spacing are a comb filter, which is what made
- * it sound metallic even at tiny shifts. Here only one reader is heard between splices, and during
- * a splice the two readers sit a whole number of waveform periods apart, so they add in phase.
+ * Unlike an H910-style shifter (two taps half a window apart, triangle-crossfaded continuously),
+ * which is a comb filter and sounds metallic even at small shifts, only one reader is heard between
+ * splices, and during a splice the two readers sit a whole number of waveform periods apart, so
+ * they add in phase.
  *
  * Mono, in place. Header-only so vst/pitch_test.cpp can exercise it natively. */
 #pragma once

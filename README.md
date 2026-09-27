@@ -7,11 +7,12 @@
 [![MIT License][license-shield]][license-url]
 [![CI](https://github.com/jacob-sabella/mpc-vst-nam/actions/workflows/ci.yml/badge.svg)](https://github.com/jacob-sabella/mpc-vst-nam/actions/workflows/ci.yml)
 [![Build](https://github.com/jacob-sabella/mpc-vst-nam/actions/workflows/build.yml/badge.svg)](https://github.com/jacob-sabella/mpc-vst-nam/actions/workflows/build.yml)
+[![Secret Scan](https://github.com/jacob-sabella/mpc-vst-nam/actions/workflows/secrets.yml/badge.svg)](https://github.com/jacob-sabella/mpc-vst-nam/actions/workflows/secrets.yml)
 
-# Neural Amp Modeler (MPC VST Plugin)
+# NAM (MPC VST Plugin)
 
-**Neural Amp Modeler** — a native MPC OS VST2 effect plugin for Akai MPC
-standalone devices: run [NAM](https://github.com/sdatkinson/neural-amp-modeler)
+**NAM** — a native MPC OS VST2 effect plugin for Akai MPC standalone
+devices: run [Neural Amp Modeler](https://github.com/sdatkinson/neural-amp-modeler)
 amp and pedal captures as an insert effect, with a cab IR, tone stack,
 gate, pitch, delay and reverb behind it, a model browser, and a
 [TONE3000](https://www.tone3000.com) tab that downloads new captures
@@ -117,14 +118,17 @@ MPC_VST=../mpc-vst-plugins ./vst/gen_skin.sh   # build the MPC skin into vst/bui
   your python has no Pillow.
 - `./vst/build.sh host` builds an x86 copy and runs `vst/host_test.c`
   against it: ABI checks, then audio through the plugin.
-- `vst/pitch_test.cpp` is an offline A/B of the pitch shifter (pitch
-  accuracy, amplitude wobble, clicks, latency per shift):
+- `vst/pitch_test.cpp` compares the pitch shifter offline against a
+  two-tap reference (pitch accuracy, amplitude wobble, clicks, latency per shift):
   `g++ -O2 -std=c++17 -Ivst vst/pitch_test.cpp -o vst/build/pitch_test && vst/build/pitch_test`.
 
 CI (`.github/workflows/ci.yml`) runs the host build, `host_test` and
 `pitch_test` on every push and pull request. `.github/workflows/build.yml`
 builds the armhf `.so` and the skin on every push to `main` and uploads
-them as a run artifact.
+them as a run artifact. `.github/workflows/secrets.yml` runs
+[TruffleHog](https://github.com/trufflesecurity/trufflehog) over the full git
+history on every push, pull request and weekly; `scripts/secret-scan.sh` runs
+the same scan locally (Docker).
 
 `vst/build.sh` also prints the plugin's exported symbols (only
 `VSTPluginMain`), needed shared libs and highest glibc version. Check them
@@ -136,15 +140,15 @@ Unzip a release (or build the payload yourself), copy it to the device,
 and run its installer:
 
 ```sh
-scp -r Neural-Amp-Modeler-<version> root@<device-ip>:/tmp/
-ssh root@<device-ip> sh /tmp/Neural-Amp-Modeler-<version>/install.sh
+scp -r NAM-<version> root@<device-ip>:/tmp/
+ssh root@<device-ip> sh /tmp/NAM-<version>/install.sh
 ```
 
 The installer checks the device architecture and copies the files. It then
 **stops MPC** (save your project first), backs up `MPC.settings`, adds the
 plugin to MPC's plugin list (`pluginList-arm`), and restarts MPC.
 
-Then add **Neural Amp Modeler** as an insert effect. Put `.nam` captures in
+Then add **NAM** (listed under jacob-sabella) as an insert effect. Put `.nam` captures in
 `/storage/Synths/NAM/models/` (one folder level of packs is fine), or
 download them from the TONE3000 tab.
 
@@ -152,8 +156,8 @@ download them from the TONE3000 tab.
 
 1. Copy the files:
    - `vst/build/nam_vst.so` → `/storage/Synths/NAM/nam_vst.so`
-   - `vst/build/skin/nam-jam interop - VST - Neural Amp Modeler/` →
-     `/storage/Synths/nam-jam interop - VST - Neural Amp Modeler/`
+   - `vst/build/skin/jacob-sabella - VST - NAM/` →
+     `/storage/Synths/jacob-sabella - VST - NAM/`
    - your captures → `/storage/Synths/NAM/models/`, cab IRs (`.wav`) →
      `/storage/Synths/NAM/cabs/`
 2. Stop MPC: `systemctl stop acvs`.
@@ -215,17 +219,6 @@ ssh root@<device-ip> 'NAM_MODELS_DIR=/storage/Synths/NAM/models BENCH_RT=1 /tmp/
 - Cab IRs are truncated to ~93 ms (direct convolution).
 - Parameters are append-only (see [How it works](#how-it-works)).
 - Developed on a Key 37. Other Gen1 MPC OS devices are untested.
-
-## Project history
-
-The NAM work started as a firmware patch: a hooked
-built-in insert effect whose vtable was hijacked to run NAM, later with
-an extra entry injected into MPC's effect list. It worked, but it
-depended on one exact firmware build. It became this native VST2 plugin once
-[mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins) showed MPC's
-own JUCE host would load one. Tone3000 first ran as a side service
-in a separate screen-streaming helper and talked to the plugin through
-files; it now lives inside the plugin.
 
 ## Credit
 

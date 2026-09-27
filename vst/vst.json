@@ -1,6 +1,6 @@
 {
-  "name": "Neural Amp Modeler",
-  "vendor": "nam-jam interop",
+  "name": "NAM",
+  "vendor": "jacob-sabella",
   "uid": "NAm1",
   "version": 1100,
   "so": "nam_vst.so",
