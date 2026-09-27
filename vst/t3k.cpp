@@ -49,6 +49,9 @@ namespace fs = std::filesystem;
 
 constexpr const char *API = "https://www.tone3000.com/api/v1";
 constexpr const char *CONF_DIR = "/storage/nam-tone3000";
+/* Publishable OAuth client id of this app's Tone3000 registration. Public by design (PKCE public
+ * client, no client secret); {"client_id": ...} in <CONF_DIR>/config.json overrides it. */
+constexpr const char *DEFAULT_CLIENT_ID = "t3k_pub_Yr1pHJdrZ65EglSR4mIf70WJ5wcazzjE";
 constexpr int LOGIN_PORT = 8090;
 
 /* ---------------- libcurl, loaded at runtime ---------------- */
@@ -275,7 +278,11 @@ std::string lan_ip() {
 
 void load_config_locked() {
     mkdir(CONF_DIR, 0755);
-    try { g_client_id = json::parse(read_file(std::string(CONF_DIR) + "/config.json")).value("client_id", std::string()); } catch (...) {}
+    g_client_id = DEFAULT_CLIENT_ID;
+    try {
+        std::string id = json::parse(read_file(std::string(CONF_DIR) + "/config.json")).value("client_id", std::string());
+        if (!id.empty()) g_client_id = id;
+    } catch (...) {}
     try {
         auto j = json::parse(read_file(tokens_path()));
         g_access = j.value("access_token", std::string());
@@ -488,14 +495,8 @@ void serve_home(int fd) {
         h += "</div><p>Browse and download from the plugin's TONE3000 tab. Captures land in BROWSE right away.</p>"
              "<a class=quiet href=/signout>Sign out</a>";
     } else {
-        bool configured;
-        { std::lock_guard<std::mutex> lk(g_mtx); configured = !g_client_id.empty(); }
-        if (configured)
-            h += "<p>Sign in once and the plugin can search and download captures straight onto the MPC.</p>"
-                 "<a class=btn href=/login>Sign in with Tone3000</a>";
-        else
-            h += "<div class=card><p style=margin:0>No Tone3000 API key yet. Put your publishable client id in "
-                 "<code>/storage/nam-tone3000/config.json</code> as <code>{\"client_id\":\"t3k_pub_...\"}</code>, then reload this page.</p></div>";
+        h += "<p>Sign in once and the plugin can search and download captures straight onto the MPC.</p>"
+             "<a class=btn href=/login>Sign in with Tone3000</a>";
     }
     reply(fd, "200 OK", page(h));
 }
@@ -503,21 +504,17 @@ void serve_login(int fd, const std::string &host) {
     std::string url;
     {
         std::lock_guard<std::mutex> lk(g_mtx);
-        load_config_locked();   /* pick up a client_id added since the plugin loaded */
-        if (g_client_id.empty()) { url.clear(); }
-        else {
-            g_pkce_verifier = random_b64(32);
-            g_pkce_state = random_b64(16);
-            g_pkce_created = (long long)time(nullptr);
-            /* Come back to whatever address the phone reached us on -- it's the one that works. */
-            g_pkce_redirect = "http://" + (host.empty() ? lan_ip() + ":" + std::to_string(LOGIN_PORT) : host) + "/callback";
-            Sha256 sh; sh.update(g_pkce_verifier);
-            url = std::string(API) + "/oauth/authorize?client_id=" + urlenc(g_client_id) + "&redirect_uri=" + urlenc(g_pkce_redirect) +
-                  "&response_type=code&code_challenge=" + urlenc(b64url(sh.digest())) + "&code_challenge_method=S256&state=" +
-                  urlenc(g_pkce_state);
-        }
+        load_config_locked();   /* pick up a config.json override edited since the plugin loaded */
+        g_pkce_verifier = random_b64(32);
+        g_pkce_state = random_b64(16);
+        g_pkce_created = (long long)time(nullptr);
+        /* Come back to whatever address the phone reached us on -- it's the one that works. */
+        g_pkce_redirect = "http://" + (host.empty() ? lan_ip() + ":" + std::to_string(LOGIN_PORT) : host) + "/callback";
+        Sha256 sh; sh.update(g_pkce_verifier);
+        url = std::string(API) + "/oauth/authorize?client_id=" + urlenc(g_client_id) + "&redirect_uri=" + urlenc(g_pkce_redirect) +
+              "&response_type=code&code_challenge=" + urlenc(b64url(sh.digest())) + "&code_challenge_method=S256&state=" +
+              urlenc(g_pkce_state);
     }
-    if (url.empty()) { serve_home(fd); return; }
     reply(fd, "302 Found", "", "Location: " + url + "\r\n");
 }
 std::string qget(const std::string &q, const std::string &key) {

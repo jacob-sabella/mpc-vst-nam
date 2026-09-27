@@ -173,14 +173,6 @@ skin over an existing install, keeping a backup of both, and restarts MPC.
 
 ## Tone3000 sign-in
 
-Create an API key at tone3000.com (Settings → API Keys) and put its
-**publishable** client id (`t3k_pub_...`, not the secret key) on the device:
-
-```sh
-ssh root@<device-ip> 'mkdir -p /storage/nam-tone3000 &&
-  echo "{\"client_id\":\"t3k_pub_...\"}" > /storage/nam-tone3000/config.json'
-```
-
 Open the TONE3000 tab. While signed out, it shows
 `Sign in on your phone: http://<device-ip>:8090`. Open that address on
 a phone on the same network and sign in. The tab flips to "Signed in" by
