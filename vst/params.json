@@ -1,0 +1,451 @@
+{
+  "name": "Neural Amp Modeler",
+  "params": [
+    {
+      "key": "model",
+      "name": "Model",
+      "min": 0,
+      "max": 1,
+      "display": "string"
+    },
+    {
+      "key": "in_gain",
+      "name": "In Gain",
+      "min": -20,
+      "max": 20,
+      "unit": "dB"
+    },
+    {
+      "key": "out_gain",
+      "name": "Out Gain",
+      "min": -20,
+      "max": 20,
+      "unit": "dB"
+    },
+    {
+      "key": "gate_thresh",
+      "name": "Thresh",
+      "min": -80,
+      "max": 0,
+      "unit": "dB"
+    },
+    {
+      "key": "gate_release",
+      "name": "Release",
+      "min": 20,
+      "max": 1000,
+      "unit": "ms"
+    },
+    {
+      "key": "bass",
+      "name": "Bass",
+      "min": -15,
+      "max": 15,
+      "unit": "dB"
+    },
+    {
+      "key": "mid",
+      "name": "Mid",
+      "min": -15,
+      "max": 15,
+      "unit": "dB"
+    },
+    {
+      "key": "treble",
+      "name": "Treble",
+      "min": -15,
+      "max": 15,
+      "unit": "dB"
+    },
+    {
+      "key": "cab_on",
+      "name": "Cab On",
+      "options": [
+        "Off",
+        "On"
+      ]
+    },
+    {
+      "key": "cab_ir",
+      "name": "Cab IR",
+      "min": 0,
+      "max": 1,
+      "display": "string"
+    },
+    {
+      "key": "pitch_on",
+      "name": "Pitch On",
+      "options": [
+        "Off",
+        "On"
+      ]
+    },
+    {
+      "key": "pitch_semi",
+      "name": "Pitch",
+      "min": -24,
+      "max": 24,
+      "unit": "st"
+    },
+    {
+      "key": "pitch_mix",
+      "name": "Mix",
+      "min": 0,
+      "max": 100,
+      "unit": "%"
+    },
+    {
+      "key": "delay_time",
+      "name": "Time",
+      "min": 1,
+      "max": 1000,
+      "unit": "ms"
+    },
+    {
+      "key": "delay_fb",
+      "name": "Feedback",
+      "min": 0,
+      "max": 95,
+      "unit": "%"
+    },
+    {
+      "key": "delay_mix",
+      "name": "Mix",
+      "min": 0,
+      "max": 100,
+      "unit": "%"
+    },
+    {
+      "key": "reverb_size",
+      "name": "Size",
+      "min": 0,
+      "max": 100,
+      "unit": "%"
+    },
+    {
+      "key": "reverb_mix",
+      "name": "Mix",
+      "min": 0,
+      "max": 100,
+      "unit": "%"
+    },
+    {
+      "key": "model_prev",
+      "name": "Model -",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "model_next",
+      "name": "Model +",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "cab_ir_prev",
+      "name": "Cab IR -",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "cab_ir_next",
+      "name": "Cab IR +",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "slot_1",
+      "name": "Model 1",
+      "display": "string"
+    },
+    {
+      "key": "slot_2",
+      "name": "Model 2",
+      "display": "string"
+    },
+    {
+      "key": "slot_3",
+      "name": "Model 3",
+      "display": "string"
+    },
+    {
+      "key": "slot_4",
+      "name": "Model 4",
+      "display": "string"
+    },
+    {
+      "key": "slot_5",
+      "name": "Model 5",
+      "display": "string"
+    },
+    {
+      "key": "slot_6",
+      "name": "Model 6",
+      "display": "string"
+    },
+    {
+      "key": "slot_7",
+      "name": "Model 7",
+      "display": "string"
+    },
+    {
+      "key": "slot_8",
+      "name": "Model 8",
+      "display": "string"
+    },
+    {
+      "key": "model_page",
+      "name": "Page",
+      "display": "string"
+    },
+    {
+      "key": "model_page_prev",
+      "name": "Page -",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "model_page_next",
+      "name": "Page +",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "quality",
+      "name": "Quality",
+      "options": [
+        "Lite",
+        "Full"
+      ]
+    },
+    {
+      "key": "t3k_status",
+      "name": "T3K Status",
+      "display": "string"
+    },
+    {
+      "key": "t3k_sort",
+      "name": "T3K Sort",
+      "options": [
+        "Trending",
+        "Newest",
+        "Downloads",
+        "Favorites"
+      ]
+    },
+    {
+      "key": "t3k_arch",
+      "name": "T3K Arch",
+      "options": [
+        "MPC",
+        "A2",
+        "Std"
+      ]
+    },
+    {
+      "key": "t3k_gear",
+      "name": "T3K Gear",
+      "display": "string"
+    },
+    {
+      "key": "t3k_gear_prev",
+      "name": "T3K Gear -",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "t3k_gear_next",
+      "name": "T3K Gear +",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "t3k_quality",
+      "name": "T3K Quality",
+      "options": [
+        "Any",
+        "Calibrated",
+        "Verified",
+        "Cal+Ver"
+      ]
+    },
+    {
+      "key": "t3k_make",
+      "name": "T3K Make",
+      "display": "string"
+    },
+    {
+      "key": "t3k_make_prev",
+      "name": "T3K Make -",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "t3k_make_next",
+      "name": "T3K Make +",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "t3k_slot_1",
+      "name": "T3K 1",
+      "display": "string"
+    },
+    {
+      "key": "t3k_slot_2",
+      "name": "T3K 2",
+      "display": "string"
+    },
+    {
+      "key": "t3k_slot_3",
+      "name": "T3K 3",
+      "display": "string"
+    },
+    {
+      "key": "t3k_slot_4",
+      "name": "T3K 4",
+      "display": "string"
+    },
+    {
+      "key": "t3k_slot_5",
+      "name": "T3K 5",
+      "display": "string"
+    },
+    {
+      "key": "t3k_slot_6",
+      "name": "T3K 6",
+      "display": "string"
+    },
+    {
+      "key": "t3k_page",
+      "name": "T3K Page",
+      "display": "string"
+    },
+    {
+      "key": "t3k_page_prev",
+      "name": "T3K Page -",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "t3k_page_next",
+      "name": "T3K Page +",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "t3k_detail",
+      "name": "T3K Detail",
+      "display": "string"
+    },
+    {
+      "key": "t3k_confirm",
+      "name": "T3K Download",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "t3k_cancel",
+      "name": "T3K Cancel",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "browse_filter",
+      "name": "Browse Filter",
+      "options": [
+        "All",
+        "Favorites",
+        "Recent"
+      ]
+    },
+    {
+      "key": "browse_detail",
+      "name": "Browse Detail",
+      "display": "string"
+    },
+    {
+      "key": "browse_fav",
+      "name": "Favorite",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    },
+    {
+      "key": "browse_delete",
+      "name": "Delete",
+      "min": 0,
+      "max": 1,
+      "momentary": true
+    }
+  ],
+  "sections": [
+    {
+      "label": "Amp",
+      "keys": [
+        "model",
+        "in_gain",
+        "out_gain"
+      ]
+    },
+    {
+      "label": "Gate",
+      "keys": [
+        "gate_thresh",
+        "gate_release"
+      ]
+    },
+    {
+      "label": "Tone",
+      "keys": [
+        "bass",
+        "mid",
+        "treble"
+      ]
+    },
+    {
+      "label": "Cab",
+      "keys": [
+        "cab_on",
+        "cab_ir"
+      ]
+    },
+    {
+      "label": "Pitch",
+      "keys": [
+        "pitch_on",
+        "pitch_semi",
+        "pitch_mix"
+      ]
+    },
+    {
+      "label": "Delay",
+      "keys": [
+        "delay_time",
+        "delay_fb",
+        "delay_mix"
+      ]
+    },
+    {
+      "label": "Reverb",
+      "keys": [
+        "reverb_size",
+        "reverb_mix"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Neural Amp Modeler",
+  "vendor": "nam-jam interop",
+  "uid": "NAm1",
+  "version": 1100,
+  "so": "nam_vst.so",
+  "params": "params.json",
+  "layout": "layout.conf",
+  "title_font": "fonts/Orbitron.ttf",
+  "label_font": "fonts/TitilliumWeb-SemiBold.ttf",
+  "install_path": "/storage/Synths/NAM/nam_vst.so"
+}

@@ -1,0 +1,13 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.wav binary
+*.nam binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.tar.gz binary
+# Vendored upstream code: show it collapsed in GitHub diffs and keep it out of language stats.
+src/** linguist-vendored

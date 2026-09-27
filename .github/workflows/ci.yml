@@ -1,0 +1,42 @@
+name: CI
+
+# Fast offline checks on every push and pull request: the parameter-order guard, an x86 build of
+# the plugin run through vst/host_test.c (VST2 ABI + audio through the plugin), and the pitch
+# shifter's offline A/B. The armhf device build lives in build.yml (it runs under QEMU and takes
+# several minutes), and releases in vst-release.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    # Skip workflow runs from fork PRs — only repo-internal pushes / PRs run.
+    # Combined with branch-protection "Require approval for first-time
+    # contributors" / "Require approval for all outside collaborators",
+    # this means only the repo owner can trigger CI.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    name: Linux (host)
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Parameter order (params.json / P_* enum / PINFO)
+        run: python3 scripts/check_params.py
+
+      - name: Host build + host_test
+        run: ./vst/build.sh host
+
+      - name: Pitch shifter A/B
+        run: |
+          g++ -O2 -std=c++17 -Ivst vst/pitch_test.cpp -o vst/build/pitch_test
+          vst/build/pitch_test
