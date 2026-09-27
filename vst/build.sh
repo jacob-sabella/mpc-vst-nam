@@ -21,7 +21,8 @@ SRC="vst/nam_vst.cpp vst/t3k.cpp $CORE/NAM/*.cpp $CORE/NAM/wavenet/*.cpp"
 # NAM_USE_INLINE_GEMM: the core's hand-written small-matrix kernels -- Eigen's general GEMM setup
 # dominates at A2 channel counts (3/8), ~2x slower on this CPU.
 # NAM_SAMPLE_FLOAT: keep the NAM I/O path in float (armv7 NEON has no double SIMD).
-DEFS="-std=c++20 -O3 -DNDEBUG -DNAM_SAMPLE_FLOAT -DNAM_USE_INLINE_GEMM"
+# PLUG_VERSION: the VST2 version integer, from the git tag (scripts/version.py).
+DEFS="-std=c++20 -O3 -DNDEBUG -DNAM_SAMPLE_FLOAT -DNAM_USE_INLINE_GEMM -DPLUG_VERSION=$(python3 scripts/version.py --vst)"
 # -ffast-math lets GCC use NEON for float loops at all (NEON flushes denormals, so without it GCC
 # won't vectorize); -mtune=cortex-a17 = the RK3288's core.
 ARM="${NAM_FASTMATH--ffast-math} -march=armv7-a -mtune=cortex-a17 -mfpu=neon-vfpv4 -mfloat-abi=hard"

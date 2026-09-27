@@ -1,0 +1,138 @@
+name: Release
+
+# Tag-driven release. Pushing a semver tag vMAJOR.MINOR.PATCH (e.g. v1.2.0, or v1.2.0-rc.1 for a
+# pre-release) on a commit in main runs CI, builds the armhf plugin and skin, packages them with
+# mpc-vst-plugins' tools/release.py (install.sh, uninstall.sh, INSTALL.md, SHA256SUMS) and
+# publishes a GitHub Release with the zip attached. The tag is the only version source: the build
+# stamps it into the plugin (scripts/version.py). Only repository admins can push v* tags.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Keep in step with build.yml.
+  MPC_VST_REF: 39660f2b41c0a6d6e9f8c1f0e19378533d9bbc2f
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    name: Validate tag
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Tag is semver
+        id: ver
+        run: |
+          VERSION=$(NAM_VERSION="${GITHUB_REF_NAME#v}" python3 scripts/version.py)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Tag is on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$GITHUB_REF_NAME is not on main"; exit 1; }
+
+      - name: Not already released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "::error::a release for $GITHUB_REF_NAME already exists"; exit 1
+          fi
+
+  ci:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: [validate, ci]
+    runs-on: ubuntu-latest
+    name: Build + package
+    env:
+      NAM_VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: port
+
+      - name: Check out mpc-vst-plugins (skin + packaging tools)
+        uses: actions/checkout@v7
+        with:
+          repository: sd88me/mpc-vst-plugins
+          ref: ${{ env.MPC_VST_REF }}
+          path: mpc-vst-plugins
+
+      - name: Set up QEMU (armhf emulation)
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm
+
+      - name: Install Pillow (skin)
+        run: python3 -m pip install --quiet pillow
+
+      - name: Build plugin + skin
+        working-directory: port
+        env:
+          MPC_VST: ${{ github.workspace }}/mpc-vst-plugins
+        run: vst/release_build.sh
+
+      - name: Check the binary
+        working-directory: port
+        run: scripts/check_binary.sh vst/build/nam_vst.so
+
+      - name: Package
+        working-directory: port
+        run: |
+          B=vst/build
+          python3 "$GITHUB_WORKSPACE/mpc-vst-plugins/tools/release.py" \
+            --so "$B/nam_vst.so" --skin "$(ls -d "$B"/skin/*/)" --entry "$B/pluginlist-entry.xml" \
+            --version "$NAM_VERSION" -o "$GITHUB_WORKSPACE/dist" \
+            --about "Neural Amp Modeler captures as an MPC insert effect, with cab IR, tone, gate, pitch, delay, reverb and an on-device TONE3000 downloader."
+          cd "$GITHUB_WORKSPACE/dist" && sha256sum -- *.zip > SHA256SUMS && cat SHA256SUMS
+
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    name: Publish release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            ## Install
+
+            Download `NAM-${{ needs.validate.outputs.version }}-mpc-armv7.zip`, unzip it, and follow
+            `INSTALL.md` inside (scripted install over SSH, or by hand). Requires a rooted
+            first-generation MPC OS device; see the [README](https://github.com/${{ github.repository }}#requirements).

@@ -2,7 +2,7 @@ version: 2
 updates:
   # Only the workflows have a package manager to watch: the NAM core, Eigen and nlohmann/json are
   # vendored under src/ and updated by hand (src/VENDORED.md), and mpc-vst-plugins is pinned to a
-  # commit on purpose (vst-release.yml / build.yml).
+  # commit on purpose (build.yml / release.yml).
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

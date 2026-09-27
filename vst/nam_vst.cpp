@@ -94,7 +94,9 @@ enum { audioMasterUpdateDisplay = 42 };
 
 #define PLUG_NAME    "NAM"
 #define PLUG_VENDOR  "jacob-sabella"
-#define PLUG_VERSION 1100
+#ifndef PLUG_VERSION
+#error "PLUG_VERSION is set by vst/build.sh (scripts/version.py --vst)"
+#endif
 #define PLUG_UID     0x4E416D31 /* 'NAm1' -- keep fixed across versions; projects find the plugin by uid */
 #define MAXBLOCK     4096
 #define CAB_MAXTAPS  4096

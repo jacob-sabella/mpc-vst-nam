@@ -3,8 +3,8 @@ name: Build
 # Device build — runs on every push to main and produces the armhf nam_vst.so, its MPC skin and
 # the pluginList entry as a downloadable artifact (same payload as scripts/deploy.sh pushes).
 # The plugin is compiled in arm32v7/gcc:12 under QEMU, exactly as vst/build.sh does locally, and
-# the skin is generated with mpc-vst-plugins pinned to the same commit as vst-release.yml.
-# Draft releases are handled separately by vst-release.yml.
+# the skin is generated with mpc-vst-plugins pinned to the same commit as release.yml.
+# Releases are handled by release.yml.
 
 on:
   push:
@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 env:
-  # Keep in step with vst-release.yml's uses:@ / tools_ref.
+  # Keep in step with release.yml.
   MPC_VST_REF: 39660f2b41c0a6d6e9f8c1f0e19378533d9bbc2f
 
 jobs:
@@ -53,21 +53,8 @@ jobs:
         run: vst/release_build.sh
 
       - name: Check the binary
-        working-directory: port/vst/build
-        run: |
-          file -b nam_vst.so | grep -q 'ELF 32-bit LSB.*ARM' || { echo "::error::nam_vst.so is not 32-bit ARM"; exit 1; }
-          exports=$(readelf --dyn-syms -W nam_vst.so | awk '$5=="GLOBAL" && $7!="UND" {print $8}' | sort -u)
-          [ "$exports" = VSTPluginMain ] || { echo "::error::unexpected exports: $exports"; exit 1; }
-          glibc=$(readelf -V nam_vst.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
-          echo "highest glibc symbol: $glibc (MPC OS target: <= GLIBC_2.36)"
-          [ "$(printf '%s\nGLIBC_2.36\n' "$glibc" | sort -V | tail -1)" = GLIBC_2.36 ] \
-            || { echo "::error::$glibc is newer than the device's supported GLIBC_2.36"; exit 1; }
-          {
-            echo "## nam_vst.so"
-            echo "- md5: \`$(md5sum nam_vst.so | cut -d' ' -f1)\`"
-            echo "- size: $(du -h nam_vst.so | cut -f1)"
-            echo "- highest glibc symbol: $glibc"
-          } >> "$GITHUB_STEP_SUMMARY"
+        working-directory: port
+        run: scripts/check_binary.sh vst/build/nam_vst.so
 
       - name: Stage payload
         run: |

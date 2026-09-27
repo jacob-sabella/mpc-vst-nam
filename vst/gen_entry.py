@@ -7,12 +7,14 @@ Run after gen_vst.py, which overwrites the file.
 """
 import json
 import os
+import subprocess
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 c = json.load(open(os.path.join(ROOT, "vst.json")))
+version = subprocess.check_output([os.path.join(ROOT, "..", "scripts", "version.py")], text=True).strip()
 os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
 open(os.path.join(ROOT, "build", "pluginlist-entry.xml"), "w").write(
-    '<PLUGIN name="{n}" descriptiveName="{n}" format="VST" category="Effect" manufacturer="{v}" version="1.0" '
+    '<PLUGIN name="{n}" descriptiveName="{n}" format="VST" category="Effect" manufacturer="{v}" version="{ver}" '
     'file="{f}" uid="{u:x}" isInstrument="0" fileTime="0" infoUpdateTime="0" numInputs="2" '
-    'numOutputs="2" isShell="0"/>\n'.format(n=c["name"], v=c["vendor"], f=c["install_path"],
+    'numOutputs="2" isShell="0"/>\n'.format(n=c["name"], v=c["vendor"], ver=version, f=c["install_path"],
                                            u=int.from_bytes(c["uid"].encode(), "big")))

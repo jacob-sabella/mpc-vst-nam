@@ -3,13 +3,14 @@ name: CI
 # Fast offline checks on every push and pull request: the parameter-order guard, an x86 build of
 # the plugin run through vst/host_test.c (VST2 ABI + audio through the plugin), and the pitch
 # shifter's offline comparison against a two-tap reference. The armhf device build lives in build.yml (it runs under QEMU and takes
-# several minutes), and releases in vst-release.yml.
+# several minutes); release.yml calls this workflow before building a release.
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.ref }}

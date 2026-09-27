@@ -227,10 +227,40 @@ ssh root@<device-ip> 'NAM_MODELS_DIR=/storage/Synths/NAM/models BENCH_RT=1 /tmp/
 
 ## Releases
 
-Draft releases are built by `.github/workflows/vst-release.yml`, which uses
-mpc-vst-plugins' shared release workflow: Actions → "VST release
-(draft)" → Run workflow. Install the draft's zip on a device, smoke-test it,
-then publish it (see mpc-vst-plugins `docs/RELEASING.md`).
+Releases are tag-driven and follow [semantic versioning](https://semver.org).
+The tag is the only version source:
+
+```sh
+git tag v1.2.0 && git push origin v1.2.0      # or v1.2.0-rc.1 for a pre-release
+```
+
+`.github/workflows/release.yml` checks that the tag is semver and on
+`main`, runs CI, builds the armhf plugin and skin, packages them with
+mpc-vst-plugins' `tools/release.py` (installer, uninstaller, `INSTALL.md`,
+checksums) and publishes a GitHub Release with
+`NAM-<version>-mpc-armv7.zip` attached. Tags with a pre-release suffix are
+marked as pre-releases.
+
+The build stamps the version into the plugin via `scripts/version.py`: the
+tag on a release, `git describe` for local builds (e.g. `1.2.0-3-gabc1234`).
+
+### Repository settings
+
+`scripts/repo-settings.sh` applies the settings that keep `main` and releases
+owner-controlled (run it as a repo admin; it is idempotent):
+
+- workflows get a read-only token and can't approve PRs; only GitHub-owned,
+  verified-creator and listed actions run; fork PRs from outside
+  contributors wait for approval before their workflows run
+- `main`: changes go through a squash-merged PR approved by a code owner
+  (`.github/CODEOWNERS`) with passing `Linux (host)` and `TruffleHog`
+  checks; no force-push or deletion; admins can bypass
+- `v*` tags: only admins can create, move or delete them, so only admins
+  can publish a release
+
+Fork-PR approval and rulesets need a public repository (or GitHub Pro); on a
+private free-plan repository the script applies the rest and says what it
+skipped. Re-run it after making the repository public.
 
 ## Vibe Coded
 
