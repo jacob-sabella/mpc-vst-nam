@@ -20,7 +20,7 @@ permissions:
 
 env:
   # Keep in step with build.yml.
-  MPC_VST_REF: 39660f2b41c0a6d6e9f8c1f0e19378533d9bbc2f
+  MPC_VST_REF: bd9513f8afbce4cb7f7f75848bc9d15c283afb17
 
 jobs:
   validate:
@@ -99,6 +99,7 @@ jobs:
           python3 "$GITHUB_WORKSPACE/mpc-vst-plugins/tools/release.py" \
             --so "$B/nam_vst.so" --skin "$(ls -d "$B"/skin/*/)" --entry "$B/pluginlist-entry.xml" \
             --version "$NAM_VERSION" -o "$GITHUB_WORKSPACE/dist" \
+            --id nam --repo jacob-sabella/mpc-vst-nam --license MIT \
             --about "Neural Amp Modeler captures as an MPC insert effect, with cab IR, tone, gate, pitch, delay, reverb and an on-device TONE3000 downloader."
           cd "$GITHUB_WORKSPACE/dist" && sha256sum -- *.zip > SHA256SUMS && cat SHA256SUMS
 
