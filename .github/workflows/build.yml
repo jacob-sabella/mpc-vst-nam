@@ -20,7 +20,7 @@ permissions:
 
 env:
   # Keep in step with release.yml.
-  MPC_VST_REF: bd9513f8afbce4cb7f7f75848bc9d15c283afb17
+  MPC_VST_REF: 081c247310560cc94bcdb0dd4db3a40e395cbe96
 
 jobs:
   armhf:
