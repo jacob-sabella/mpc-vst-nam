@@ -136,6 +136,29 @@ against the target device before shipping.
 
 ## Installation
 
+### From the MPC OS Plugin Catalog (Recommended)
+
+NAM is listed in the
+[MPC OS Plugin Catalog](https://sd88me.github.io/mpc-vst-plugins/), which
+shows each release with its checksum. Either:
+
+- **Installer app**: download the
+  [MPC plugin installer](https://github.com/sd88me/mpc-vst-plugins/releases/latest)
+  (Windows, Mac, Linux), connect to your device and tick **NAM**. It checks
+  the download, backs up your settings and restarts MPC once.
+- **One command from your computer**: the catalog page builds it for you
+  when you select NAM. It fetches `mpc-store.sh` and installs:
+
+  ```sh
+  ssh -t root@<device-ip> "wget -qO /tmp/mpc-store.sh https://sd88me.github.io/mpc-vst-plugins/mpc-store.sh && sh /tmp/mpc-store.sh install nam"
+  ```
+
+  The same script also does `update`, `remove nam` and `list`.
+
+Both need root SSH access (see [Requirements](#requirements)).
+
+### From a release zip
+
 Unzip a release (or build the payload yourself), copy it to the device,
 and run its installer:
 
