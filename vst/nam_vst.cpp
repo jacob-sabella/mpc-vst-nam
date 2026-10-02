@@ -224,12 +224,24 @@ static float mapRange(float norm, float lo, float hi) { return lo + (hi - lo) * 
 static float dbToLin(float db) { return std::pow(10.f, db / 20.f); }
 
 static std::string self_dir() {
-    Dl_info info;
-    if (dladdr((void *)&self_dir, &info) && info.dli_fname) {
-        try { return std::filesystem::path(info.dli_fname).parent_path().string(); }
-        catch (...) {}
+    /* The directory this .so was loaded from, read from /proc/self/maps (the mapping that holds this function).
+     * Not dladdr(): built against glibc >= 2.34 it binds to GLIBC_2.34, which MPC OS 2.x (glibc 2.32) lacks. */
+    FILE *f = std::fopen("/proc/self/maps", "r");
+    if (!f) return "";
+    std::string dir;
+    char line[1024];
+    unsigned long me = (unsigned long)&self_dir;
+    while (dir.empty() && std::fgets(line, sizeof line, f)) {
+        unsigned long lo, hi;
+        char *p = std::strchr(line, '/');
+        if (std::sscanf(line, "%lx-%lx", &lo, &hi) == 2 && me >= lo && me < hi && p) {
+            p[std::strcspn(p, "\n")] = 0;
+            try { dir = std::filesystem::path(p).parent_path().string(); }
+            catch (...) {}
+        }
     }
-    return "";
+    std::fclose(f);
+    return dir;
 }
 
 static bool has_ext(const std::string &dir, const char *ext) {
