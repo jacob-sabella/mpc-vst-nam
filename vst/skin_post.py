@@ -1,11 +1,12 @@
 """Post-build pass over the generated NAM skin:
 - replaces the stock knob filmstrips with the synthwave knob (270-degree track, lit magenta value arc
-  with a soft glow, dark face, cyan pointer);
+  with a soft glow, dark face, cyan pointer), with fewer frames where 128 would make a strip taller
+  than MPC draws correctly (16384 px), and numFrames in TUI.json to match;
 - hides the Q-Link zone outline on every page (see hide_qlink_bounds()).
 
 Runs after gen_vst.py (vst/gen_skin.sh does both):  python3 vst/skin_post.py <Plugin Skins dir>
 Each strip keeps the generator's own geometry (square frames stacked vertically, frame count from the
-image shape), so TUI.json needs no changes beyond what the generator wrote.
+image shape unless capped).
 """
 import json
 import math
@@ -69,14 +70,41 @@ def frame(size, t):
     return img.resize((size, size), Image.LANCZOS)
 
 
+MAX_STRIP = 16384            # MPC draws an image taller than this wrongly (mpc-vst-plugins catalog_check.py)
+
+
 def rebuild_strip(path):
+    """Redraw one filmstrip in place; returns its frame count, capped so the strip stays under MAX_STRIP px
+    (the generator's 128 frames of a 130 px knob are 16640 px): the caller fixes numFrames in TUI.json."""
     w, h = Image.open(path).size
-    n = h // w
+    n = min(h // w, MAX_STRIP // w)
     strip = Image.new("RGB", (w, w * n))
     for k in range(n):
         strip.paste(frame(w, k / (n - 1)), (0, k * w))
     strip.save(path, optimize=True)
     print("knob strip %s: %d frames of %dpx" % (os.path.basename(path), n, w))
+    return n
+
+
+def set_num_frames(skin, frames):
+    """numFrames of every Knob whose filmStrip is in frames (name -> frame count) = count - 1, as the generator writes it."""
+    path = os.path.join(skin, "TUI.json")
+    tui = json.load(open(path))
+    hit = [0]
+
+    def walk(o):
+        if isinstance(o, dict):
+            if o.get("filmStrip") in frames and "numFrames" in o:
+                o["numFrames"] = frames[o["filmStrip"]] - 1
+                hit[0] += 1
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(tui)
+    json.dump(tui, open(path, "w"), indent=4)
+    print("numFrames set on %d knobs" % hit[0])
 
 
 def hide_qlink_bounds(skin):
@@ -108,14 +136,14 @@ def hide_qlink_bounds(skin):
 
 def main(skin):
     hide_qlink_bounds(skin)
-    hit = 0
+    frames = {}
     for root, _dirs, files in os.walk(skin):
         for f in sorted(files):
             if f.startswith("sh_knob_r") and f.endswith(".png"):
-                rebuild_strip(os.path.join(root, f))
-                hit += 1
-    if not hit:
+                frames[f] = rebuild_strip(os.path.join(root, f))
+    if not frames:
         raise SystemExit("skin_post: no sh_knob_r*.png filmstrips found under " + skin)
+    set_num_frames(skin, frames)
 
 
 if __name__ == "__main__":
