@@ -2,7 +2,7 @@ name: Build
 
 # Device build — runs on every push to main and produces the armhf nam_vst.so, its MPC skin and
 # the pluginList entry as a downloadable artifact (same payload as scripts/deploy.sh pushes).
-# The plugin is compiled in arm32v7/gcc:12 under QEMU, exactly as vst/build.sh does locally, and
+# The plugin is compiled in arm32v7/gcc:11-bullseye (glibc 2.31) under QEMU, exactly as vst/build.sh does locally, and
 # the skin is generated with mpc-vst-plugins pinned to the same commit as release.yml.
 # Releases are handled by release.yml.
 
@@ -20,7 +20,7 @@ permissions:
 
 env:
   # Keep in step with release.yml.
-  MPC_VST_REF: 081c247310560cc94bcdb0dd4db3a40e395cbe96
+  MPC_VST_REF: ac29ba18f26ab7a2298230284c871b128126b48e
 
 jobs:
   armhf:

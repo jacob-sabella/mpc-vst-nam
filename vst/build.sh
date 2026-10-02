@@ -6,7 +6,7 @@
 # Models, cab IRs, favorites and the models-removed folder all live next to the .so: see
 # models_dir() / cabs_dir() in nam_vst.cpp.
 #
-#   vst/build.sh          armhf build in arm32v7/gcc:12 under Docker (what CI runs)
+#   vst/build.sh          armhf build in arm32v7/gcc:11-bullseye (glibc 2.31) under Docker (what CI runs)
 #   ARM_TC=<toolchain> vst/build.sh
 #                         same build with a local armv7 hard-float cross toolchain (bootlin
 #                         armv7-eabihf--glibc--stable): much faster than emulation
@@ -45,13 +45,13 @@ if [ -n "${ARM_TC:-}" ]; then
   "${X}readelf" --dyn-syms -W vst/build/nam_vst.so | grep -E " GLOBAL .* [0-9]+ [A-Za-z]" | grep -v UND
 else
   docker run --rm --platform linux/arm/v7 -u "$(id -u):$(id -g)" -v "$PWD":/b -w /b \
-    -e DEFS="$DEFS" -e ARM="$ARM" -e LINK="$LINK" -e INC="$INC" -e SRC="$SRC" arm32v7/gcc:12 bash -euc '
+    -e DEFS="$DEFS" -e ARM="$ARM" -e LINK="$LINK" -e INC="$INC" -e SRC="$SRC" arm32v7/gcc:11-bullseye bash -euc '
     g++ $DEFS $ARM $LINK $INC $SRC -ldl -o vst/build/nam_vst.so
     gcc -O2 $ARM -o vst/build/bench vst/bench.c -ldl -lm
     strip vst/build/nam_vst.so vst/build/bench
     echo "-- exported --"; readelf --dyn-syms -W vst/build/nam_vst.so | grep -E " GLOBAL .* [0-9]+ [A-Za-z]" | grep -v UND
     echo "-- needed --"; readelf -d vst/build/nam_vst.so | grep NEEDED
-    echo "-- highest glibc (device has 2.39) --"; readelf -V vst/build/nam_vst.so | grep -o "GLIBC_[0-9.]*" | sort -uV | tail -1
+    echo "-- highest glibc (catalog limit 2.32: MPC OS 2.x) --"; readelf -V vst/build/nam_vst.so | grep -o "GLIBC_[0-9.]*" | sort -uV | tail -1
   '
 fi
 md5sum vst/build/nam_vst.so

@@ -102,7 +102,7 @@ separate GUI process: the Tone3000 sign-in page is served by the plugin itself.
 
 ## Build
 
-Requires Docker with armhf emulation (`arm32v7/gcc:12`, `--platform
+Requires Docker with armhf emulation (`arm32v7/gcc:11-bullseye`, `--platform
 linux/arm/v7`), plus an [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins)
 checkout for the skin:
 
