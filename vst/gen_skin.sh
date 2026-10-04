@@ -18,8 +18,9 @@ if [ "${DOCKER:-}" = 1 ]; then
     python:3.11-slim sh -c "pip install -q --target /tmp/p pillow 2>/dev/null &&
       PYTHONPATH=/tmp/p python3 /mv/tools/gen_vst.py vst.json && PYTHONPATH=/tmp/p python3 skin_post.py '$SKIN'"
 else
-  SHADOW_TITLE_FONT="$PWD/fonts/Orbitron.ttf" SHADOW_LABEL_FONT="$PWD/fonts/TitilliumWeb-SemiBold.ttf" \
-    python3 "$MPC_VST/tools/gen_vst.py" vst.json
+  # skin_post.py draws the button labels in the title font too
+  export SHADOW_TITLE_FONT="$PWD/fonts/Orbitron.ttf" SHADOW_LABEL_FONT="$PWD/fonts/TitilliumWeb-SemiBold.ttf"
+  python3 "$MPC_VST/tools/gen_vst.py" vst.json
   python3 skin_post.py "$SKIN"
 fi
 python3 gen_entry.py
