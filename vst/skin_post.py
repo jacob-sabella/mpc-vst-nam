@@ -87,7 +87,9 @@ def rebuild_strip(path):
 
 
 def set_num_frames(skin, frames):
-    """numFrames of every Knob whose filmStrip is in frames (name -> frame count) = count - 1, as the generator writes it."""
+    """numFrames of every Knob whose filmStrip is in frames (name -> frame count) = the frame count. MPC cuts a strip
+    into numFrames slices of image height / numFrames (measured on a Key 37, 2026-10-03), so count - 1 slices a
+    126-frame strip 1 px per frame off and shows a mid-range knob split across two frames."""
     path = os.path.join(skin, "TUI.json")
     tui = json.load(open(path))
     hit = [0]
@@ -95,7 +97,7 @@ def set_num_frames(skin, frames):
     def walk(o):
         if isinstance(o, dict):
             if o.get("filmStrip") in frames and "numFrames" in o:
-                o["numFrames"] = frames[o["filmStrip"]] - 1
+                o["numFrames"] = frames[o["filmStrip"]]
                 hit[0] += 1
             for v in o.values():
                 walk(v)
