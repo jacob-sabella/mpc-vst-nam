@@ -60,7 +60,8 @@ separate GUI process: the Tone3000 sign-in page is served by the plugin itself.
 
   SORT, ARCH, GEAR and MAKE sit on the four Q-Links. The favorites sort
   ignores the filters, since the API doesn't filter that list.
-- **PITCH**: a single-reader pitch shifter (±24 semitones) that re-splices
+- **PITCH**: a single-reader pitch shifter (±24 semitones, in whole
+  semitones: one Q-Link tick or data wheel click is one semitone) that re-splices
   only when it has to, choosing each splice point by cross-correlation so
   the crossfade stays in phase. Unlike a two-tap shifter it doesn't comb
   filter, so small shifts don't sound metallic. See `vst/pitch_shift.h`.
@@ -117,7 +118,8 @@ MPC_VST=../mpc-vst-plugins ./vst/gen_skin.sh   # build the MPC skin into vst/bui
 - `DOCKER=1 ./vst/gen_skin.sh` runs the skin step in `python:3.11-slim` if
   your python has no Pillow.
 - `./vst/build.sh host` builds an x86 copy and runs `vst/host_test.c`
-  against it: ABI checks, then audio through the plugin.
+  against it: ABI checks, audio through the plugin, then Pitch stepping
+  (Q-Link and wheel ticks both ways, a fast spin, drags, a direct set).
 - `vst/pitch_test.cpp` compares the pitch shifter offline against a
   two-tap reference (pitch accuracy, amplitude wobble, clicks, latency per shift):
   `g++ -O2 -std=c++17 -Ivst vst/pitch_test.cpp -o vst/build/pitch_test && vst/build/pitch_test`.

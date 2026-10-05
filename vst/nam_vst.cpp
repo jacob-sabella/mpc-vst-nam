@@ -221,6 +221,19 @@ static const ParamInfo PINFO[NPARAMS] = {
 
 static float clamp01(float v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 static float mapRange(float norm, float lo, float hi) { return lo + (hi - lo) * clamp01(norm); }
+
+/* Where a whole-step param lands, in steps from its minimum (same rule as mpc-vst-plugins' wrapper/vst2_wrap.c).
+ * A Q-Link event or data wheel click sends the read-back value plus less than a step, so round toward the way it
+ * moves: one tick is one step, and a drag or sweep (positions from where it started) moves steadily. */
+static float settle(float pos, float cur, float last) {
+    if (fabsf(pos - roundf(pos)) <= 0.001f) return roundf(pos);
+    float dir = (last >= 0 && fabsf(pos - last) < 0.5f) ? pos - last : pos - cur;
+    if (dir == 0) return roundf(cur);
+    return dir > 0 ? ceilf(pos - 0.001f) : floorf(pos + 0.001f);
+}
+
+static const float PITCH_SPAN = PITCH_MAX_ST - PITCH_MIN_ST;
+static float pitch_snap(float norm) { return roundf(clamp01(norm) * PITCH_SPAN) / PITCH_SPAN; }
 static float dbToLin(float db) { return std::pow(10.f, db / 20.f); }
 
 static std::string self_dir() {
@@ -570,6 +583,9 @@ struct Nam {
     CabIR cab;
     PitchShift pitch;
     bool pitch_was_on = false;
+    float pitch_last_pos = -1.f;   /* host's last Pitch position in semitones from the minimum, for settle() */
+    bool pitch_last_tick = false;  /* the last Pitch set was a Q-Link / wheel tick */
+    long long pitch_last_ms = 0;
     Delay delay;
     Reverb reverb;
 
@@ -994,6 +1010,26 @@ static void setParameter(AEffect *e, int32_t i, float v) {
                    i == P_T3K_PAGE_PREV || i == P_T3K_PAGE_NEXT ||
                    i == P_T3K_CONFIRM || i == P_T3K_CANCEL || i == P_BROWSE_FAV || i == P_BROWSE_DELETE) &&
                   (v >= 0.5f) != (n->p[i] >= 0.5f);
+    if (i == P_PITCH_SEMI) {   /* whole semitones, one per Q-Link tick or wheel click */
+        float cur = pitch_snap(n->p[i]), d = v - cur, k = d * 128.f, pos = v * PITCH_SPAN, steps;
+        /* A Q-Link event is the read-back value plus a whole number of 1/128 of the range, a data wheel click
+         * +-0.01: a tick in that direction, also right after a step the other way (settle() alone reads that
+         * as a sweep still going). A fast spin moves as far as it asked, at least one step. */
+        bool tick = fabsf(d) > 1e-5f && ((fabsf(k - roundf(k)) < 0.002f && fabsf(k) < 16.5f) || fabsf(fabsf(d) - 0.01f) < 2e-5f);
+        /* A drag can land on such an offset by chance: count it as a tick only where no drag is going on (ticks
+         * before it, a pause, a jump, or the same position again, which a repeated tick sends). */
+        long long t = now_ms();
+        float moved = n->pitch_last_pos < 0 ? 1.f : fabsf(pos - n->pitch_last_pos);
+        tick = tick && (n->pitch_last_tick || t - n->pitch_last_ms > 150 || moved >= 0.5f || moved < 1e-4f);
+        n->pitch_last_tick = tick;
+        n->pitch_last_ms = t;
+        if (tick) {
+            float far = std::max(1.f, roundf(fabsf(d) * PITCH_SPAN));
+            steps = roundf(cur * PITCH_SPAN) + (d > 0 ? far : -far);
+        } else steps = settle(pos, cur * PITCH_SPAN, n->pitch_last_pos);
+        n->pitch_last_pos = pos;
+        v = clamp01(steps / PITCH_SPAN);
+    }
     float prev = n->p[i];
     n->p[i] = v;
     /* BROWSE tab. Any action other than a second DELETE disarms a pending delete and clears the
@@ -1248,7 +1284,7 @@ static void processReplacing(AEffect *e, float **in, float **out, int32_t count)
     if (pitch_on) {
         if (!n->pitch_was_on) n->pitch.reset();   /* don't replay audio left from when it was last on */
         n->pitch.process(mbuf, count, n->sr,
-                          mapRange(n->p[P_PITCH_SEMI], PITCH_MIN_ST, PITCH_MAX_ST),
+                          mapRange(pitch_snap(n->p[P_PITCH_SEMI]), PITCH_MIN_ST, PITCH_MAX_ST),
                           mapRange(n->p[P_PITCH_MIX], 0.f, 100.f) * 0.01f);
     }
     n->pitch_was_on = pitch_on;
@@ -1363,6 +1399,10 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
                 else copy_str(p, "Tap a result, then DOWNLOAD", 64);
             } else copy_str(p, "", 8);
         }
+        else if (idx == P_PITCH_SEMI) {
+            int st = (int)lroundf(mapRange(pitch_snap(n->p[idx]), PITCH_MIN_ST, PITCH_MAX_ST));
+            snprintf((char *)p, 24, st > 0 ? "+%d" : "%d", st);
+        }
         else if (idx >= 0 && idx < NPARAMS) snprintf((char *)p, 24, "%.1f", mapRange(n->p[idx], PINFO[idx].lo, PINFO[idx].hi));
         return 1;
     case effSetSampleRate:
@@ -1422,6 +1462,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
                 } else {
                     int pidx = atoi(key.c_str());
                     if (pidx >= 0 && pidx < NPARAMS) n->p[pidx] = clamp01((float)atof(val.c_str()));
+                    if (pidx == P_PITCH_SEMI) n->p[pidx] = pitch_snap(n->p[pidx]);   /* older saves held fractions */
                 }
             }
             if (nl == std::string::npos) break;

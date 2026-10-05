@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 typedef struct AEffect AEffect;
 typedef intptr_t (*amc)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
@@ -23,7 +25,7 @@ struct AEffect {
     void (*processDoubleReplacing)(AEffect *, double **, double **, int32_t);
     char future[56];
 };
-enum { effGetPlugCategory = 35, effGetEffectName = 45 };
+enum { effGetParamDisplay = 7, effGetParamName = 8, effGetPlugCategory = 35, effGetEffectName = 45 };
 
 int main(int argc, char **argv) {
     const char *so = argc > 1 ? argv[1] : "./nam_vst.host.so";
@@ -66,6 +68,64 @@ int main(int argc, char **argv) {
     printf("nonfinite  = %d %s\n", nonfinite, nonfinite ? "BAD" : "ok");
     printf("out peak   = %.5f, energy = %.5f %s\n", peak, energy,
            (energy > 1e-9) ? "ok (audio present)" : (fail = 1, "BAD silent"));
+
+    /* Pitch moves in whole semitones: MPC sends a Q-Link event as the read-back value + 1/128 of the range (a fast
+     * spin up to ~10/128) and a data wheel click as +-0.01, and each must move exactly one semitone (48 in range). */
+    int pi = -1;
+    for (int i = 0; i < e->numParams; i++) {
+        char pn[64] = {0};
+        e->dispatcher(e, effGetParamName, i, 0, pn, 0);
+        if (!strcmp(pn, "Pitch")) pi = i;
+    }
+    if (pi < 0) { printf("pitch      = BAD no \"Pitch\" param\n"); fail = 1; }
+    else {
+        struct { float delta; int want; const char *what; } steps[] = {
+            {1.f / 128, 1, "Q-Link up"}, {1.f / 128, 2, "Q-Link up"}, {-0.01f, 1, "wheel down"},
+            {-1.f / 128, 0, "Q-Link down"}, {-1.f / 128, -1, "Q-Link down"}, {0.01f, 0, "wheel up"},
+        };
+        e->setParameter(e, pi, 0.5f);
+        for (unsigned k = 0; k < sizeof steps / sizeof steps[0]; k++) {
+            e->setParameter(e, pi, e->getParameter(e, pi) + steps[k].delta);
+            char t[64] = {0};
+            e->dispatcher(e, effGetParamDisplay, pi, 0, t, 0);
+            int got = atoi(t);
+            int ok = got == steps[k].want && fabsf(e->getParameter(e, pi) * 48.f - (24 + steps[k].want)) < 1e-4f;
+            printf("pitch      = %-4s after %s %s\n", t, steps[k].what, ok ? "ok" : (fail = 1, "BAD"));
+        }
+        e->setParameter(e, pi, e->getParameter(e, pi) + 10.f / 128);   /* fast spin: 3.75 semitones */
+        float st = e->getParameter(e, pi) * 48.f - 24;
+        int ok = fabsf(st - roundf(st)) < 1e-4f && st >= 3 && st <= 4;
+        printf("pitch      = %+.0f after a fast spin %s\n", st, ok ? "ok" : (fail = 1, "BAD"));
+        /* A drag sends positions from where it started (here 0.13 semitone apart, from 0): steady, no flicker,
+         * up to the end and back down. */
+        e->setParameter(e, pi, 0.5f);
+        float prev = 0, pos = 0; ok = 1;
+        for (int k = 1; k <= 120; k++) {
+            pos = 0.13f * k;
+            e->setParameter(e, pi, (24 + pos) / 48.f);
+            float v = e->getParameter(e, pi) * 48.f - 24;
+            if (v < prev - 1e-4f || fabsf(v - roundf(v)) > 1e-4f) ok = 0;
+            prev = v;
+        }
+        printf("pitch      = %+.0f after a drag up %s\n", prev, ok && fabsf(prev - ceilf(pos - 0.001f)) < 1e-4f ? "ok" : (fail = 1, "BAD"));
+        ok = 1;
+        for (int k = 1; k <= 120; k++) {
+            e->setParameter(e, pi, (24 + pos - 0.13f * k) / 48.f);
+            float v = e->getParameter(e, pi) * 48.f - 24;
+            if (v > prev + 1e-4f || fabsf(v - roundf(v)) > 1e-4f) ok = 0;
+            prev = v;
+        }
+        printf("pitch      = %+.0f after a drag back down %s\n", prev, ok && fabsf(prev) < 1e-4f ? "ok" : (fail = 1, "BAD"));
+        usleep(200000);   /* then a Q-Link, up and straight back down: one step each way */
+        e->setParameter(e, pi, e->getParameter(e, pi) + 1.f / 128);
+        float a = e->getParameter(e, pi) * 48.f - 24;
+        e->setParameter(e, pi, e->getParameter(e, pi) - 1.f / 128);
+        float b = e->getParameter(e, pi) * 48.f - 24;
+        printf("pitch      = %+.0f then %+.0f, Q-Link after a drag %s\n", a, b, fabsf(a - 1) < 1e-4f && fabsf(b) < 1e-4f ? "ok" : (fail = 1, "BAD"));
+        e->setParameter(e, pi, 0.75f);   /* automation / a preset: exactly +12 */
+        st = e->getParameter(e, pi) * 48.f - 24;
+        printf("pitch      = %+.0f after a direct set %s\n", st, fabsf(st - 12) < 1e-4f ? "ok" : (fail = 1, "BAD"));
+    }
 
     printf(fail ? "\nFAILED\n" : "\nPASSED\n");
     return fail;
