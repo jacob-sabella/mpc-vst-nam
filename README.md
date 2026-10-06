@@ -89,7 +89,9 @@ separate GUI process: the Tone3000 sign-in page is served by the plugin itself.
   only the TONE3000 tab is affected, on a system without it. Nothing
   touches the audio thread.
 - Models, cab IRs, favorites and the recycle folder all sit next to the
-  `.so`. See `models_dir()` / `cabs_dir()` in `nam_vst.cpp`.
+  `.so`. See `models_dir()` / `cabs_dir()` in `nam_vst.cpp`. The release
+  declares them as user data (`--user-data` in `release.yml`), so the
+  installer keeps them across upgrades and uninstalls.
 
 ## Requirements
 
@@ -174,8 +176,9 @@ The installer checks the device architecture and copies the files. It then
 plugin to MPC's plugin list (`pluginList-arm`), and restarts MPC.
 
 Then add **NAM** (listed under jacob-sabella) as an insert effect. Put `.nam` captures in
-`/storage/Synths/NAM/models/` (one folder level of packs is fine), or
-download them from the TONE3000 tab.
+`/sdcard/Synths/jacob-sabella - VST - NAM/models/` (one folder level of packs is fine), or
+download them from the TONE3000 tab. Upgrading or uninstalling keeps your
+`models/`, `cabs/`, `models-removed/` and `favorites.txt`.
 
 ### Install by hand
 
