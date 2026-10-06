@@ -266,7 +266,8 @@ git tag v1.2.0 && git push origin v1.2.0      # or v1.2.0-rc.1 for a pre-release
 `main`, runs CI, builds the armhf plugin and skin, packages them with
 mpc-vst-plugins' `tools/release.py` (installer, uninstaller, `INSTALL.md`,
 checksums) and publishes a GitHub Release with
-`NAM-<version>-mpc-armv7.zip` attached. Tags with a pre-release suffix are
+`NAM-<version>-mpc-armv7.zip` attached. The release notes are the
+Requirements and Install sections of the zip's `INSTALL.md`. Tags with a pre-release suffix are
 marked as pre-releases.
 
 The build stamps the version into the plugin via `scripts/version.py`: the

@@ -104,11 +104,34 @@ jobs:
             --about "Neural Amp Modeler captures as an MPC insert effect, with cab IR, tone, gate, pitch, delay, reverb and an on-device TONE3000 downloader."
           cd "$GITHUB_WORKSPACE/dist" && sha256sum -- *.zip > SHA256SUMS && cat SHA256SUMS
 
+      - name: Release notes (INSTALL.md's Requirements and Install, as the catalog asks)
+        run: |
+          mkdir -p notes
+          python3 - dist/*.zip > notes/notes.md <<'PY'
+          import re, sys, zipfile
+          z = zipfile.ZipFile(sys.argv[1])
+          md = z.read(next(n for n in z.namelist() if n.endswith("/INSTALL.md"))).decode()
+          keep = [s for s in re.split(r"(?m)^(?=## )", md) if s.startswith(("## Requirements", "## Install (scripted)"))]
+          print("".join(keep).rstrip() + "\n")
+          print("Full instructions, including installing by hand, are in `INSTALL.md` inside the zip.")
+          PY
+          printf '\n---\nBuilt by GitHub Actions from %s@%s with mpc-vst-plugins@%s.\n' \
+            "$GITHUB_REPOSITORY" "${GITHUB_SHA::7}" "${MPC_VST_REF::7}" >> notes/notes.md
+          cat notes/notes.md
+
       - name: Upload package
         uses: actions/upload-artifact@v7
         with:
           name: release
           path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v7
+        with:
+          name: notes
+          path: notes/notes.md
           if-no-files-found: error
           retention-days: 30
 
@@ -124,6 +147,11 @@ jobs:
           name: release
           path: dist
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: notes
+          path: notes
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         env:
@@ -132,9 +160,4 @@ jobs:
           files: dist/*
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
-          body: |
-            ## Install
-
-            Download `NAM-${{ needs.validate.outputs.version }}-mpc-armv7.zip`, unzip it, and follow
-            `INSTALL.md` inside (scripted install over SSH, or by hand). Requires a rooted
-            first-generation MPC OS device; see the [README](https://github.com/${{ github.repository }}#requirements).
+          body_path: notes/notes.md
