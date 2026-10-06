@@ -14,9 +14,8 @@
  * mappings by index, so an existing index must never move or change meaning. Every block after
  * the model defaults to a transparent/off state.
  *
- * Models are discovered at load in the first existing of: $NAM_MODELS_DIR, <dir of this .so>/models,
- * /media/0180-2800/nam-host/models, /media/acvs-content/nam-host/models. Cab IRs use the same
- * search order under NAM_CABS_DIR / .../cabs, loading mono .wav files (16/24/32-bit PCM or float),
+ * Models are discovered at load in the first existing of: $NAM_MODELS_DIR, <dir of this .so>/models.
+ * Cab IRs use the same search order under NAM_CABS_DIR / <dir of this .so>/cabs, loading mono .wav files (16/24/32-bit PCM or float),
  * truncated to CAB_MAXTAPS samples (~93ms @44.1kHz) -- direct time-domain convolution, so longer
  * IRs are capped rather than resampled/streamed; this covers the vast majority of real cab IR packs
  * and keeps the worst case around 180M MACs/sec, comfortably inside the RK3288's budget.
@@ -272,8 +271,6 @@ static std::string models_dir() {
     if (!sd.empty() && has_ext(sd, ".nam")) return sd;
     std::error_code ec;   /* every model may live in a pack folder, leaving none at the top level */
     if (!sd.empty() && std::filesystem::is_directory(sd + "/models", ec)) return sd + "/models";
-    for (const char *c : {"/media/0180-2800/nam-host/models", "/media/acvs-content/nam-host/models"})
-        if (has_ext(c, ".nam")) return c;
     return sd.empty() ? "." : sd;
 }
 
@@ -281,8 +278,6 @@ static std::string cabs_dir() {
     if (const char *e = std::getenv("NAM_CABS_DIR")) { if (has_ext(e, ".wav")) return e; }
     std::string sd = self_dir();
     if (!sd.empty() && has_ext(sd + "/cabs", ".wav")) return sd + "/cabs";
-    for (const char *c : {"/media/0180-2800/nam-host/cabs", "/media/acvs-content/nam-host/cabs"})
-        if (has_ext(c, ".wav")) return c;
     return sd.empty() ? "cabs" : sd + "/cabs";
 }
 
