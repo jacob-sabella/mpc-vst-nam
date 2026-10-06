@@ -11,6 +11,11 @@
 
 # NAM (MPC VST Plugin)
 
+> **MPC OS.** This release works on **MPC OS 3.x**. On MPC OS 2.x it loads and plays from the Q-Links, but its touchscreen
+> page stays empty until a release with a compatible skin is published. The [catalog](https://sd88me.github.io/mpc-vst-plugins/)
+> shows which MPC OS each release works on, and the installers warn before putting a 3.x-only plugin on a 2.x device.
+> See [MPC OS 2.x vs 3.x](https://github.com/sd88me/mpc-vst-plugins#mpc-os-2x-vs-3x) in the main repo.
+
 **NAM** — a native MPC OS VST2 effect plugin for Akai MPC standalone
 devices: run [Neural Amp Modeler](https://github.com/sdatkinson/neural-amp-modeler)
 amp and pedal captures as an insert effect, with a cab IR, tone stack,
