@@ -46,9 +46,10 @@ void stop();
 /* sort: 0 trending, 1 newest, 2 most downloaded, 3 the user's favorited tones. page is 1-based.
  * A newer browse() from the same owner replaces one of its own that hasn't started yet. */
 long long browse(const void *owner, int sort, int page, int page_size, const Filters &filt = {});
-/* Saves every capture of tone_id: a single capture into models_dir, a pack into
- * models_dir/<tone name>/. */
-long long download(const void *owner, long long tone_id, const std::string &tone_name, const std::string &models_dir);
+/* Saves the captures of tone_id that match filt's architecture and sizes: a single capture into
+ * models_dir, several into models_dir/<tone name>/. */
+long long download(const void *owner, long long tone_id, const std::string &tone_name, const std::string &models_dir,
+                   const Filters &filt = {});
 
 Status status();
 bool results(long long seq, Results &out);   /* false until the worker has answered that seq */

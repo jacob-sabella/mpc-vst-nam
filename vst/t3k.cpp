@@ -402,17 +402,40 @@ void do_search(const Job &jb) {
     set_status(jb.seq, code == 200 ? "idle" : "error", code == 200 ? "" : code == -2 ? "bad reply from Tone3000" : http_error(code));
 }
 
+/* sizes is the hyphen-joined list sent to /tones/search, e.g. "lite-feather-nano". */
+bool size_listed(const std::string &sizes, const std::string &size) {
+    if (size.empty()) return false;
+    size_t p = 0;
+    while (p <= sizes.size()) {
+        size_t e = sizes.find('-', p);
+        if (e == std::string::npos) e = sizes.size();
+        if (sizes.compare(p, e - p, size) == 0) return true;
+        p = e + 1;
+    }
+    return false;
+}
+
 void do_download(const Job &jb) {
     set_status(jb.seq, "downloading", "");
     long terr;
     std::string tok = access_token(&terr);
     if (tok.empty()) { set_status(jb.seq, "error", terr ? http_error(terr) : "sign in first"); return; }
+    /* Without architecture, /models returns A1 + custom only, so a tone found under the A2 filters
+     * would download its heavy A1 captures. It has no sizes parameter either; A2 captures come back
+     * with size null (one slimmable file, run at QUALITY's size), so only an explicit size is checked. */
+    std::string url = std::string(API) + "/models?tone_id=" + std::to_string(jb.tone_id) + "&page_size=300";
+    if (jb.filt.architecture) url += "&architecture=" + std::to_string(jb.filt.architecture);
     std::string resp;
-    long code = http(std::string(API) + "/models?tone_id=" + std::to_string(jb.tone_id) + "&page_size=300", nullptr, tok, &resp);
+    long code = http(url, nullptr, tok, &resp);
     if (code != 200) { set_status(jb.seq, "error", "fetch models: " + http_error(code)); return; }
-    json data;
-    try { data = json::parse(resp).value("data", json::array()); } catch (...) {}
-    if (!data.is_array() || data.empty()) { set_status(jb.seq, "error", "no captures in this tone"); return; }
+    json all, data = json::array();
+    try { all = json::parse(resp).value("data", json::array()); } catch (...) {}
+    if (!all.is_array() || all.empty()) { set_status(jb.seq, "error", "no captures in this tone"); return; }
+    for (auto &m : all) {
+        std::string size = m.contains("size") && m["size"].is_string() ? m["size"].get<std::string>() : "";
+        if (jb.filt.sizes.empty() || size.empty() || size_listed(jb.filt.sizes, size)) data.push_back(m);
+    }
+    if (data.empty()) { set_status(jb.seq, "error", "no captures fit ARCH"); return; }
     /* A pack gets its own folder (BROWSE shows it as one row); a single capture lands loose. */
     std::string pack = data.size() > 1 ? safe_name(jb.name, false) : std::string();
     fs::path dest = pack.empty() ? fs::path(jb.dir) : fs::path(jb.dir) / pack;
@@ -642,9 +665,10 @@ long long browse(const void *owner, int sort, int page, int page_size, const Fil
     g_cv.notify_all();
     return jb.seq;
 }
-long long download(const void *owner, long long tone_id, const std::string &tone_name, const std::string &models_dir) {
+long long download(const void *owner, long long tone_id, const std::string &tone_name, const std::string &models_dir,
+                   const Filters &filt) {
     std::lock_guard<std::mutex> lk(g_mtx);
-    Job jb{next_seq_locked(), owner, true, 0, 0, 0, tone_id, tone_name, models_dir};
+    Job jb{next_seq_locked(), owner, true, 0, 0, 0, tone_id, tone_name, models_dir, filt};
     g_jobs.push_back(jb);
     g_cv.notify_all();
     return jb.seq;

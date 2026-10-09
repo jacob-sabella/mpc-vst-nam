@@ -935,7 +935,7 @@ static void t3k_write_request_locked(Nam *n, bool browse, long long download) {
         n->t3k_selected = -1;
         n->t3k_have_results = false;
         for (int i = 0; i < T3K_SLOTS_PER_PAGE; i++) { n->t3k_items[i].clear(); n->t3k_item_ids[i] = 0; }
-    } else n->t3k_seq = t3k::download(n, download, n->t3k_dl_name, n->dir);
+    } else n->t3k_seq = t3k::download(n, download, n->t3k_dl_name, n->dir, t3k_filters(n));
     n->t3k_st = t3k::status();
     t3k_eval_status(n);
 }

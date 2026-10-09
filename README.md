@@ -58,7 +58,9 @@ separate GUI process: the Tone3000 sign-in page is served by the plugin itself.
   Filters narrow the list:
   - **ARCH**: `MPC` (the default: A2 captures at Lite/Feather/Nano size, the ones
     that fit on the CPU, see [CPU](#cpu)), `A2` (every A2 size) or `STD` (the
-    site's default, A1 and custom architectures).
+    site's default, A1 and custom architectures). DOWNLOAD follows it too: under
+    `MPC`, a pack saves only its Lite/Feather/Nano captures, so heavier sizes
+    only arrive if you switch ARCH yourself. This applies to the favorites sort as well.
   - **QUALITY**: any, calibrated, verified creators, or both.
   - **GEAR**: amp, amp+cab, pedal, cab, outboard, space or experimental.
   - **MAKE**: a list of common amp makers (Fender, Marshall, Mesa Boogie, Vox, …).
