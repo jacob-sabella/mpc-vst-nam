@@ -420,8 +420,9 @@ void do_download(const Job &jb) {
     long terr;
     std::string tok = access_token(&terr);
     if (tok.empty()) { set_status(jb.seq, "error", terr ? http_error(terr) : "sign in first"); return; }
-    /* /models has no sizes parameter and, without architecture, returns A1 + custom only, so a tone
-     * found under the A2 filters would otherwise download its heavy A1 captures. */
+    /* Without architecture, /models returns A1 + custom only, so a tone found under the A2 filters
+     * would download its heavy A1 captures. It has no sizes parameter either; A2 captures come back
+     * with size null (one slimmable file, run at QUALITY's size), so only an explicit size is checked. */
     std::string url = std::string(API) + "/models?tone_id=" + std::to_string(jb.tone_id) + "&page_size=300";
     if (jb.filt.architecture) url += "&architecture=" + std::to_string(jb.filt.architecture);
     std::string resp;
@@ -432,7 +433,7 @@ void do_download(const Job &jb) {
     if (!all.is_array() || all.empty()) { set_status(jb.seq, "error", "no captures in this tone"); return; }
     for (auto &m : all) {
         std::string size = m.contains("size") && m["size"].is_string() ? m["size"].get<std::string>() : "";
-        if (jb.filt.sizes.empty() || size_listed(jb.filt.sizes, size)) data.push_back(m);
+        if (jb.filt.sizes.empty() || size.empty() || size_listed(jb.filt.sizes, size)) data.push_back(m);
     }
     if (data.empty()) { set_status(jb.seq, "error", "no captures fit ARCH"); return; }
     /* A pack gets its own folder (BROWSE shows it as one row); a single capture lands loose. */
