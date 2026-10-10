@@ -20,7 +20,7 @@ permissions:
 
 env:
   # Keep in step with build.yml.
-  MPC_VST_REF: a4b8f861d07153a2b387d7520331f532f7247502
+  MPC_VST_REF: 9f5f91a14dfe7a57b5ac25f86a461c6539f82ba1
 
 jobs:
   validate:
@@ -86,6 +86,7 @@ jobs:
         working-directory: port
         env:
           MPC_VST: ${{ github.workspace }}/mpc-vst-plugins
+          SHADOW_SKIN_MPC_OS: "2"     # the skin in the MPC OS 2.x shape, which 3.x reads too (vst/gen_skin.sh)
         run: vst/release_build.sh
 
       - name: Check the binary

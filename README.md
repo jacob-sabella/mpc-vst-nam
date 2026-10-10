@@ -11,9 +11,9 @@
 
 # NAM (MPC VST Plugin)
 
-> **MPC OS.** This release works on **MPC OS 3.x**. On MPC OS 2.x it loads and plays from the Q-Links, but its touchscreen
-> page stays empty until a release with a compatible skin is published. The [catalog](https://sd88me.github.io/mpc-vst-plugins/)
-> shows which MPC OS each release works on, and the installers warn before putting a 3.x-only plugin on a 2.x device.
+> **MPC OS.** From 1.0.9, this works on **MPC OS 2.x and 3.x**: its skin is written in the MPC OS 2.x format, which 3.x reads
+> too. The skin is checked against MPC OS 2.15.1's own skins; it has not been tried on a 2.x unit yet. The
+> [catalog](https://sd88me.github.io/mpc-vst-plugins/) shows which MPC OS each release works on. Earlier releases are 3.x only.
 > See [MPC OS 2.x vs 3.x](https://github.com/sd88me/mpc-vst-plugins#mpc-os-2x-vs-3x) in the main repo.
 
 **NAM** — a native MPC OS VST2 effect plugin for Akai MPC standalone
