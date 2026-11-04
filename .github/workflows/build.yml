@@ -20,7 +20,7 @@ permissions:
 
 env:
   # Keep in step with release.yml.
-  MPC_VST_REF: 9f5f91a14dfe7a57b5ac25f86a461c6539f82ba1
+  MPC_VST_REF: 8e266cec8abd3d780e331404209c3e8b8f699c5c
 
 jobs:
   armhf:
@@ -34,7 +34,7 @@ jobs:
       - name: Check out mpc-vst-plugins (skin tools)
         uses: actions/checkout@v7
         with:
-          repository: sd88me/mpc-vst-plugins
+          repository: open-mpc/mpc-vst-plugins
           ref: ${{ env.MPC_VST_REF }}
           path: mpc-vst-plugins
 

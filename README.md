@@ -13,8 +13,8 @@
 
 > **MPC OS.** From 1.0.9, this works on **MPC OS 2.x and 3.x**: its skin is written in the MPC OS 2.x format, which 3.x reads
 > too. The skin is checked against MPC OS 2.15.1's own skins; it has not been tried on a 2.x unit yet. The
-> [catalog](https://sd88me.github.io/mpc-vst-plugins/) shows which MPC OS each release works on. Earlier releases are 3.x only.
-> See [MPC OS 2.x vs 3.x](https://github.com/sd88me/mpc-vst-plugins#mpc-os-2x-vs-3x) in the main repo.
+> [catalog](https://open-mpc.github.io/) shows which MPC OS each release works on. Earlier releases are 3.x only.
+> See [MPC OS 2.x vs 3.x](https://github.com/open-mpc/mpc-vst-plugins#mpc-os-2x-vs-3x) in the main repo.
 
 **NAM** — a native MPC OS VST2 effect plugin for Akai MPC standalone
 devices: run [Neural Amp Modeler](https://github.com/sdatkinson/neural-amp-modeler)
@@ -73,7 +73,7 @@ separate GUI process: the Tone3000 sign-in page is served by the plugin itself.
   the crossfade stays in phase. Unlike a two-tap shifter it doesn't comb
   filter, so small shifts don't sound metallic. See `vst/pitch_shift.h`.
 - **Skin**: a native MPC screen skin (`TUI.json` + Q-Links) built from
-  `vst/layout.conf` with [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins)'
+  `vst/layout.conf` with [mpc-vst-plugins](https://github.com/open-mpc/mpc-vst-plugins)'
   `gen_vst.py`, then `vst/skin_post.py` for the synthwave knob strips.
 
 ## How it works
@@ -113,7 +113,7 @@ separate GUI process: the Tone3000 sign-in page is served by the plugin itself.
 ## Build
 
 Requires Docker with armhf emulation (`arm32v7/gcc:11-bullseye`, `--platform
-linux/arm/v7`), plus an [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins)
+linux/arm/v7`), plus an [mpc-vst-plugins](https://github.com/open-mpc/mpc-vst-plugins)
 checkout for the skin:
 
 ```sh
@@ -150,18 +150,18 @@ against the target device before shipping.
 ### From the MPC OS Plugin Catalog (Recommended)
 
 NAM is listed in the
-[MPC OS Plugin Catalog](https://sd88me.github.io/mpc-vst-plugins/), which
+[MPC OS Plugin Catalog](https://open-mpc.github.io/), which
 shows each release with its checksum. Either:
 
 - **Installer app**: download the
-  [MPC plugin installer](https://github.com/sd88me/mpc-vst-plugins/releases/latest)
+  [MPC plugin installer](https://github.com/open-mpc/mpc-vst-plugins/releases/latest)
   (Windows, Mac, Linux), connect to your device and tick **NAM**. It checks
   the download, backs up your settings and restarts MPC once.
 - **One command from your computer**: the catalog page builds it for you
   when you select NAM. It fetches `mpc-store.sh` and installs:
 
   ```sh
-  ssh -t root@<device-ip> "wget -qO /tmp/mpc-store.sh https://sd88me.github.io/mpc-vst-plugins/mpc-store.sh && sh /tmp/mpc-store.sh install nam"
+  ssh -t root@<device-ip> "wget -qO /tmp/mpc-store.sh https://open-mpc.github.io/mpc-store.sh && sh /tmp/mpc-store.sh install nam"
   ```
 
   The same script also does `update`, `remove nam` and `list`.
@@ -254,7 +254,7 @@ ssh root@<device-ip> 'NAM_MODELS_DIR=/storage/Synths/NAM/models BENCH_RT=1 /tmp/
   with [Eigen](https://eigen.tuxfamily.org) (MPL2) and
   [nlohmann/json](https://github.com/nlohmann/json) (MIT). See `src/VENDORED.md`.
 - **Plugin framework, skin generator and release tooling**:
-  [sd88me/mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins).
+  [open-mpc/mpc-vst-plugins](https://github.com/open-mpc/mpc-vst-plugins).
 - **Fonts**: Orbitron and Titillium Web, SIL OFL (`vst/fonts/OFL.txt`).
 - **New for this project**: the VST effect and DSP chain around the core
   (`vst/nam_vst.cpp`), the Tone3000 client (`vst/t3k.cpp`), the skin
