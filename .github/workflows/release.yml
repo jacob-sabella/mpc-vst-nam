@@ -20,7 +20,7 @@ permissions:
 
 env:
   # Keep in step with build.yml.
-  MPC_VST_REF: 8e266cec8abd3d780e331404209c3e8b8f699c5c
+  MPC_VST_REF: a0dda4f8ea34aa3b5f13468b570bcbaf39dbd362
 
 jobs:
   validate:
