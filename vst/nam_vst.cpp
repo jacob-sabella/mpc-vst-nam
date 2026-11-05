@@ -57,6 +57,12 @@
 #include "NAM/activations.h"
 #include "json.hpp"
 #include "t3k.h"
+/* The MPC Sample's screen page (mpc-vst-plugins' wrapper/sample_draw.h, on the include path when MPC_VST is set at build
+ * time): drawn only where mpc-addin-sample-draw-handler runs; a no-op everywhere else. */
+#if __has_include("sample_draw.h")
+#include "sample_draw.h"
+#define NAM_SAMPLE_PAGE 1
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -570,6 +576,18 @@ struct Nam {
 
     std::mutex dsp_mtx;
     std::unique_ptr<nam::DSP> dsp;
+    /* Peak levels since the screen page last looked (it takes them with exchange(0)): written by the audio thread. */
+    std::atomic<float> in_peak{0.f}, out_peak{0.f};
+#ifdef NAM_SAMPLE_PAGE
+    sdc_page page;
+    float in_show = 0.f, out_show = 0.f;   /* the page's falling meters, dBFS-mapped 0..1 */
+    std::atomic<int> page_target{-1};      /* model picked on the page, loaded once it rests; -1 none */
+    std::atomic<long long> page_target_ms{0};
+    int page_bank = 0;                     /* knobs: 0 AMP, 1 TONE, 2 FX */
+    bool page_caught[3] = { false, false, false };   /* the knob has caught its value (pickup) */
+    float page_set[3] = { 0.f, 0.f, 0.f };           /* the value it last set, 0..1 as a knob position */
+    int page_knob_pos[3] = { -1, -1, -1 };    /* where each knob is, 0-127; -1 until it moves */
+#endif
     std::vector<NAM_SAMPLE> din, dout;
     std::vector<float> mbuf;
 
@@ -1246,7 +1264,9 @@ static void processReplacing(AEffect *e, float **in, float **out, int32_t count)
     const float *l = in[0], *r = in[1];
 
     float ig = dbToLin(mapRange(n->p[P_INGAIN], GAIN_MIN_DB, GAIN_MAX_DB));
-    for (int32_t i = 0; i < count; i++) mbuf[i] = 0.5f * (l[i] + r[i]) * ig;
+    float ipk = 0.f;
+    for (int32_t i = 0; i < count; i++) { mbuf[i] = 0.5f * (l[i] + r[i]) * ig; ipk = std::max(ipk, std::fabs(mbuf[i])); }
+    if (ipk > n->in_peak.load(std::memory_order_relaxed)) n->in_peak.store(ipk, std::memory_order_relaxed);
 
     n->gate.process(mbuf, count, n->sr,
                      mapRange(n->p[P_GATE_THRESH], GATE_MIN_DB, GATE_MAX_DB),
@@ -1296,7 +1316,9 @@ static void processReplacing(AEffect *e, float **in, float **out, int32_t count)
                            mapRange(n->p[P_REVERB_MIX], 0.f, 100.f) * 0.01f);
 
     float og = dbToLin(mapRange(n->p[P_OUTGAIN], GAIN_MIN_DB, GAIN_MAX_DB));
-    for (int32_t i = 0; i < count; i++) out[0][i] = out[1][i] = mbuf[i] * og;
+    float opk = 0.f;
+    for (int32_t i = 0; i < count; i++) { float v = mbuf[i] * og; out[0][i] = out[1][i] = v; opk = std::max(opk, std::fabs(v)); }
+    if (opk > n->out_peak.load(std::memory_order_relaxed)) n->out_peak.store(opk, std::memory_order_relaxed);
 }
 
 /* VST2 accumulating process(): adds to the output buffers. */
@@ -1318,6 +1340,9 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
     switch (op) {
     case effOpen: return 1;
     case effClose:
+#ifdef NAM_SAMPLE_PAGE
+        sdc_page_close(&n->page);   /* before anything the page reads goes */
+#endif
         poll_stop(n);
         delete n;
         return 1;
@@ -1470,6 +1495,206 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
     }
 }
 
+#ifdef NAM_SAMPLE_PAGE
+/* ---- The MPC Sample's screen page (320 x 240): local models only (no TONE3000 there). The keys above the screen are
+ * MODEL -, MODEL + and the knob bank (AMP, TONE, FX); the dial browses models; K1-K3 set the bank's three values. A model
+ * change only sets a target, which the page's thread loads once the dial rests (loading takes a moment). Knobs set a value once
+ * they catch it: a knob does nothing until its position meets the value (as MPC's own effects do), then follows it;
+ * a bank switch, or the value changing elsewhere (Commander, a project load), lets go again. ---- */
+#define SAMPLE_NBANKS 3
+static const int SAMPLE_BANKS[SAMPLE_NBANKS][3] = {
+    { P_INGAIN, P_GATE_THRESH, P_OUTGAIN }, { P_BASS, P_MID, P_TREBLE }, { P_PITCH_SEMI, P_DELAY_MIX, P_REVERB_MIX } };
+static const char *SAMPLE_BANK_NAMES[SAMPLE_NBANKS] = { "AMP", "TONE", "FX" };
+static const char *SAMPLE_KNOB_NAMES[SAMPLE_NBANKS][3] = {
+    { "INPUT", "GATE", "OUTPUT" }, { "BASS", "MID", "TREBLE" }, { "PITCH", "DELAY", "REVERB" } };
+#define SAMPLE_CATCH 0.02f   /* a knob this close to the value (of 0..1) catches it */
+
+/* A parameter as a knob position 0..1: pitch is -24..+24 semitones over the travel, off = 0 = the middle. */
+static float sample_knob_norm(Nam *n, int pi) {
+    if (pi == P_PITCH_SEMI) return n->p[P_PITCH_ON] >= 0.5f ? pitch_snap(n->p[pi]) : 0.5f;
+    return clamp01(n->p[pi]);
+}
+
+static float meter_pos(float peak) {   /* -60..0 dBFS -> 0..1 */
+    float db = peak > 1e-6f ? 20.f * std::log10(peak) : -120.f;
+    return clamp01((db + 60.f) / 60.f);
+}
+
+static void draw_meter(sdc_canvas *cv, int y, const char *label, float pos, float peak) {
+    const uint32_t frame = 0x3a2a6a, lo = 0x22e6ff, hot = 0xffb020, clip = 0xff2050;
+    sdc_text(cv, 8, y + 2, 1, 0xb8a8ff, label);
+    int x = 32, w = 280, h = 11;
+    sdc_frame(cv, x, y, w, h, 1, frame);
+    int fill = (int)(pos * (float)(w - 4));
+    int warn = (int)((float)(w - 4) * 48.f / 60.f);   /* -12 dBFS */
+    sdc_fill(cv, x + 2, y + 2, std::min(fill, warn), h - 4, lo);
+    if (fill > warn) sdc_fill(cv, x + 2 + warn, y + 2, fill - warn, h - 4, peak >= 0.999f ? clip : hot);
+}
+
+static void sample_param_text(Nam *n, int i, char *out, size_t sz) {
+    const ParamInfo &pi = PINFO[i];
+    float v = mapRange(n->p[i], pi.lo, pi.hi);
+    if (i == P_PITCH_SEMI) {
+        int st = (int)lroundf(mapRange(pitch_snap(n->p[i]), PITCH_MIN_ST, PITCH_MAX_ST));
+        if (n->p[P_PITCH_ON] < 0.5f || st == 0) snprintf(out, sz, "OFF"); else snprintf(out, sz, "%+d", st);
+    } else if (i == P_DELAY_MIX || i == P_REVERB_MIX) snprintf(out, sz, "%.0f%%", v);
+    else snprintf(out, sz, i == P_GATE_THRESH ? "%.0f" : "%+.1f", v);
+}
+
+static void sample_page_input(void *user, const mpc_sdraw_event *ev) {
+    Nam *n = (Nam *)user;
+    int nm;
+    { std::lock_guard<std::recursive_mutex> lk(n->lib_mtx); nm = (int)n->names.size(); }
+    auto step = [&](int d) {
+        if (nm <= 0) return;
+        int t = n->page_target.load();
+        if (t < 0) t = n->model_idx;
+        n->page_target.store(((t + d) % nm + nm) % nm);
+        n->page_target_ms.store(now_ms());
+    };
+    if (ev->type == MPC_SDRAW_EV_KEY && ev->value) {
+        if (ev->id == 0) step(-1);
+        else if (ev->id == 1) step(1);
+        else if (ev->id == 2) { n->page_bank = (n->page_bank + 1) % SAMPLE_NBANKS; for (bool &c : n->page_caught) c = false; }
+    } else if (ev->type == MPC_SDRAW_EV_DIAL) {
+        step(ev->value);
+    } else if (ev->type == MPC_SDRAW_EV_KNOB_AT && ev->id >= 0 && ev->id < 3) {
+        n->page_knob_pos[ev->id] = ev->value;   /* where it is; nothing turned, nothing caught */
+        n->page_caught[ev->id] = false;
+    } else if (ev->type == MPC_SDRAW_EV_KNOB && ev->id >= 0 && ev->id < 3) {
+        int k = ev->id, pi = SAMPLE_BANKS[n->page_bank][k];
+        float cur = sample_knob_norm(n, pi), kn = (float)ev->value / 127.f;
+        float prev = n->page_knob_pos[k] >= 0 ? (float)n->page_knob_pos[k] / 127.f : -1.f;
+        n->page_knob_pos[k] = ev->value;
+        if (n->page_caught[k] && fabsf(cur - n->page_set[k]) > 1e-4f) n->page_caught[k] = false;   /* changed elsewhere */
+        if (!n->page_caught[k])   /* within reach, or passed over the value since the last position */
+            n->page_caught[k] = fabsf(kn - cur) <= SAMPLE_CATCH || (prev >= 0.f && (prev - cur) * (kn - cur) <= 0.f);
+        if (!n->page_caught[k]) return;
+        if (pi == P_PITCH_SEMI) {   /* whole semitones, set directly; on away from 0, off at 0 */
+            int st = (int)lroundf(kn * (PITCH_MAX_ST - PITCH_MIN_ST) + PITCH_MIN_ST);
+            float v = ((float)st - PITCH_MIN_ST) / (PITCH_MAX_ST - PITCH_MIN_ST), on = st != 0 ? 1.f : 0.f;
+            n->p[P_PITCH_SEMI] = v;
+            n->p[P_PITCH_ON] = on;
+            if (n->master) {
+                n->master(&n->fx, 0 /* audioMasterAutomate */, P_PITCH_SEMI, 0, nullptr, v);
+                n->master(&n->fx, 0, P_PITCH_ON, 0, nullptr, on);
+            }
+        } else {
+            setParameter(&n->fx, pi, kn);
+            if (n->master) n->master(&n->fx, 0 /* audioMasterAutomate */, pi, 0, nullptr, n->p[pi]);
+        }
+        n->page_set[k] = sample_knob_norm(n, pi);
+    }
+}
+
+static void sample_page_render(void *user, sdc_canvas *cv) {
+    Nam *n = (Nam *)user;
+    const uint32_t bg = 0x0b0820, pink = 0xff2fa0, text = 0xf0e8ff, dim = 0x8a7ab8, cyan = 0x22e6ff, panel = 0x1a1040;
+
+    /* a model picked on the keys or the dial loads once it has rested 250 ms */
+    int target = n->page_target.load();
+    if (target >= 0 && now_ms() - n->page_target_ms.load() >= 250) {
+        std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
+        if (target < (int)n->names.size() && target != n->model_idx) { load_index(n, target); reveal_current(n); ask_redraw(n); }
+        n->page_target.store(-1);
+        target = -1;
+    }
+
+    sdc_fill(cv, 0, 0, cv->w, cv->h, bg);
+
+    /* the keys above the screen */
+    char bank_key[16]; snprintf(bank_key, sizeof bank_key, "%s >", SAMPLE_BANK_NAMES[n->page_bank]);   /* the bank the knobs are on */
+    const char *keys[3] = { "< MODEL", "MODEL >", bank_key };
+    for (int k = 0; k < 3; k++) {
+        int x = k * 107, w = k == 2 ? cv->w - x : 106;
+        sdc_fill(cv, x, 0, w, 20, panel);
+        sdc_text(cv, x + (w - sdc_text_width(keys[k], 2)) / 2, 3, 2, k == 2 ? cyan : text, keys[k]);
+    }
+    sdc_fill(cv, 0, 20, cv->w, 2, pink);
+
+    /* the model: the one being picked while the dial turns, else the loaded one */
+    std::string name; int idx = 0, nm = 0;
+    {
+        std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
+        nm = (int)n->names.size();
+        idx = target >= 0 && target < nm ? target : n->model_idx;
+        if (idx >= 0 && idx < nm) name = n->names[(size_t)idx];
+    }
+    size_t slash = name.rfind('/');
+    if (slash != std::string::npos) name = name.substr(slash + 1);
+    std::replace(name.begin(), name.end(), '_', ' ');   /* capture names use _ for spaces: let them wrap at words */
+    if (name.empty()) name = "NO MODELS";
+    uint32_t ncol = target >= 0 ? pink : text;
+    char pos[24]; snprintf(pos, sizeof pos, "%d/%d", nm ? idx + 1 : 0, nm);
+    sdc_text(cv, 8, 28, 1, dim, "NAM");
+    const char *q = n->p[P_QUALITY] >= 0.5f ? "FULL" : "LITE";
+    sdc_text(cv, cv->w - 8 - sdc_text_width(pos, 1) - 8 - sdc_text_width(q, 1), 28, 1, cyan, q);
+    sdc_text(cv, cv->w - 8 - sdc_text_width(pos, 1), 28, 1, dim, pos);
+    int maxc3 = (cv->w - 16 + 3) / 18, maxc2 = (cv->w - 16 + 2) / 12;
+    if ((int)name.size() <= maxc3) {
+        sdc_text(cv, 8, 46, 3, ncol, name.c_str());
+    } else {   /* word-wrapped, up to three lines: models in one pack often differ only at the end of the name */
+        std::vector<std::string> lines;
+        std::string rest = name;
+        while (!rest.empty() && lines.size() < 3) {
+            if ((int)rest.size() <= maxc2) { lines.push_back(rest); rest.clear(); break; }
+            size_t cut = rest.rfind(' ', (size_t)maxc2);
+            if (cut == std::string::npos || cut < 4) cut = (size_t)maxc2;
+            lines.push_back(rest.substr(0, cut));
+            rest = rest.substr(cut);
+            while (!rest.empty() && rest[0] == ' ') rest.erase(0, 1);
+        }
+        if (!rest.empty()) { std::string &l = lines.back(); if ((int)l.size() > maxc2 - 2) l.resize((size_t)maxc2 - 2); l += ".."; }
+        for (size_t k = 0; k < lines.size(); k++) sdc_text(cv, 8, 40 + 16 * (int)k, 2, ncol, lines[k].c_str());
+    }
+    std::string cab = "CAB OFF";
+    if (n->p[P_CAB_ON] >= 0.5f) {
+        int ci = n->cab.idx;
+        cab = ci >= 0 && ci < (int)n->cab.names.size() ? "CAB " + n->cab.names[(size_t)ci] : "CAB (NONE)";
+        if ((int)cab.size() > 50) cab = cab.substr(0, 48) + "..";
+    }
+    sdc_text(cv, 8, 88, 1, dim, cab.c_str());
+
+    /* meters: fall about 20 dB a second at 15 fps */
+    float ip = n->in_peak.exchange(0.f, std::memory_order_relaxed), op = n->out_peak.exchange(0.f, std::memory_order_relaxed);
+    n->in_show = std::max(meter_pos(ip), n->in_show - 0.022f);
+    n->out_show = std::max(meter_pos(op), n->out_show - 0.022f);
+    draw_meter(cv, 100, "IN", n->in_show, ip);
+    draw_meter(cv, 116, "OUT", n->out_show, op);
+
+    /* the knobs K1-K3: this bank's values, the other bank small underneath */
+    int bank = n->page_bank;
+    sdc_fill(cv, 0, 136, cv->w, 2, pink);
+    sdc_text(cv, 8, 142, 1, cyan, SAMPLE_BANK_NAMES[bank]);
+    for (int k = 0; k < 3; k++) {
+        int x = k * 107, w = 106, pi = SAMPLE_BANKS[bank][k];
+        char v[16]; sample_param_text(n, pi, v, sizeof v);
+        const char *lab = SAMPLE_KNOB_NAMES[bank][k];
+        sdc_text(cv, x + (w - sdc_text_width(lab, 2)) / 2, 158, 2, dim, lab);
+        sdc_text(cv, x + (w - sdc_text_width(v, 3)) / 2, 178, 3, text, v);
+        float t = sample_knob_norm(n, pi);
+        int bw = w - 24;
+        sdc_fill(cv, x + 12, 204, bw, 4, 0x2a2050);
+        sdc_fill(cv, x + 12, 204, (int)((float)bw * t), 4, cyan);
+        bool caught = n->page_caught[k] && fabsf(t - n->page_set[k]) <= 1e-4f;
+        int kp = n->page_knob_pos[k];
+        char o[40];
+        if (!caught && kp >= 0) {   /* where the knob is, and which way to turn it to catch the value */
+            float kn = (float)kp / 127.f;
+            sdc_fill(cv, x + 12 + (int)((float)(bw - 3) * kn), 200, 3, 12, pink);
+            snprintf(o, sizeof o, kn < t ? "TURN >" : "< TURN");
+            sdc_text(cv, x + (w - sdc_text_width(o, 1)) / 2, 216, 1, pink, o);
+        } else {
+            int nb = (bank + 1) % SAMPLE_NBANKS, ob = SAMPLE_BANKS[nb][k];   /* the next bank, small */
+            char ov[16]; sample_param_text(n, ob, ov, sizeof ov);
+            snprintf(o, sizeof o, "%s %s", SAMPLE_KNOB_NAMES[nb][k], ov);
+            sdc_text(cv, x + (w - sdc_text_width(o, 1)) / 2, 216, 1, dim, o);
+        }
+    }
+    sdc_text(cv, cv->w - 8 - sdc_text_width("HOLD PAD FX: BACK", 1), 230, 1, 0x5a4a88, "HOLD PAD FX: BACK");
+}
+#endif
+
 extern "C" __attribute__((visibility("default"))) AEffect *VSTPluginMain(audioMasterCallback master) {
     nam::activations::Activation::enable_fast_tanh();   /* A1 tanh models; A2 LeakyReLU unaffected */
     Nam *n = new Nam();
@@ -1498,5 +1723,8 @@ extern "C" __attribute__((visibility("default"))) AEffect *VSTPluginMain(audioMa
     e->version = PLUG_VERSION;
     e->object = n;
     e->user = (void *)master;
+#ifdef NAM_SAMPLE_PAGE
+    if (sdc_page_open(&n->page, "NAM", 15, sample_page_render, n) == 0) sdc_page_set_input(&n->page, sample_page_input, n);
+#endif
     return e;
 }
