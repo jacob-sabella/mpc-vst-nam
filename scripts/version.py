@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""The build's version, taken from git tags (releases are tag-driven: pushing vX.Y.Z releases X.Y.Z).
+"""The build's version: $NAM_VERSION, or else the latest release tag.
 
-$NAM_VERSION wins when set (the release workflow sets it from the tag). Otherwise `git describe`
-against the latest v* tag: "1.2.0" on a tagged commit, "1.2.0-3-gabc1234" three commits later,
+$NAM_VERSION wins when set (the release workflow sets it from its version input). Otherwise `git describe`
+against the latest release tag (nam-vst-vX.Y.Z, or vX.Y.Z up to 1.0.10): "1.2.0" on a tagged commit, "1.2.0-3-gabc1234" three commits later,
 "-dirty" appended for uncommitted changes, and "0.0.0-dev" with no tag (or no git history).
 
   scripts/version.py          print the version
@@ -23,9 +23,9 @@ def version():
     if os.environ.get("NAM_VERSION"):
         return os.environ["NAM_VERSION"]
     try:
-        out = subprocess.run(["git", "describe", "--tags", "--match", "v[0-9]*", "--dirty"],
+        out = subprocess.run(["git", "describe", "--tags", "--match", "v[0-9]*", "--match", "nam-vst-v[0-9]*", "--dirty"],
                              cwd=Path(__file__).resolve().parent, capture_output=True, text=True, check=True)
-        return out.stdout.strip()[1:]
+        return re.sub(r"^(nam-vst-)?v", "", out.stdout.strip())
     except (OSError, subprocess.CalledProcessError):
         return "0.0.0-dev"
 

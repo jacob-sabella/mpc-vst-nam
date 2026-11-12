@@ -1,164 +1,42 @@
+# Build NAM for MPC OS and attach the zips to a DRAFT release, with mpc-vst-plugins' reusable workflow
+# (its docs/RELEASING.md, "Releasing from CI"). Run it from the Actions tab with a version; the tag is nam-vst-v<version>.
+# Releases up to 1.0.10 were tagged v<version> by an older, tag-driven workflow; those tags stay as they are.
+# mpc-vst-plugins is pinned to ONE commit in both places below: the workflow itself, and tools_ref, which the workflow
+# checks out for the skin and packaging tools. Bump both together, and MPC_VST_REF in build.yml with them.
 name: Release
 
-# Tag-driven release. Pushing a semver tag vMAJOR.MINOR.PATCH (e.g. v1.2.0, or v1.2.0-rc.1 for a
-# pre-release) on a commit in main runs CI, builds the armhf plugin and skin, packages them with
-# mpc-vst-plugins' tools/release.py (install.sh, uninstall.sh, INSTALL.md, SHA256SUMS) and
-# publishes a GitHub Release with the zip attached. The tag is the only version source: the build
-# stamps it into the plugin (scripts/version.py). Only repository admins can push v* tags.
-
 on:
-  push:
-    tags:
-      - 'v*'
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
-permissions:
-  contents: read
-
-env:
-  # Keep in step with build.yml.
-  MPC_VST_REF: a0dda4f8ea34aa3b5f13468b570bcbaf39dbd362
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version for the zip and INSTALL.md, e.g. 1.0.11
+        required: true
+        type: string
+      dry_run:
+        description: Build and package only (zips and skin previews as run artifacts, no draft release)
+        type: boolean
+        default: false
 
 jobs:
-  validate:
-    runs-on: ubuntu-latest
-    name: Validate tag
-    outputs:
-      version: ${{ steps.ver.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Tag is semver
-        id: ver
-        run: |
-          VERSION=$(NAM_VERSION="${GITHUB_REF_NAME#v}" python3 scripts/version.py)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Tag is on main
-        run: |
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
-            || { echo "::error::$GITHUB_REF_NAME is not on main"; exit 1; }
-
-      - name: Not already released
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "::error::a release for $GITHUB_REF_NAME already exists"; exit 1
-          fi
-
-  ci:
-    needs: validate
-    uses: ./.github/workflows/ci.yml
-
-  build:
-    needs: [validate, ci]
-    runs-on: ubuntu-latest
-    name: Build + package
-    env:
-      NAM_VERSION: ${{ needs.validate.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          path: port
-
-      - name: Check out mpc-vst-plugins (skin + packaging tools)
-        uses: actions/checkout@v7
-        with:
-          repository: open-mpc/mpc-vst-plugins
-          ref: ${{ env.MPC_VST_REF }}
-          path: mpc-vst-plugins
-
-      - name: Set up QEMU (armhf emulation)
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm
-
-      - name: Install Pillow (skin)
-        run: python3 -m pip install --quiet pillow
-
-      - name: Build plugin + skin
-        working-directory: port
-        env:
-          MPC_VST: ${{ github.workspace }}/mpc-vst-plugins
-          SHADOW_SKIN_MPC_OS: "2"     # the skin in the MPC OS 2.x shape, which 3.x reads too (vst/gen_skin.sh)
-        run: vst/release_build.sh
-
-      - name: Check the binary
-        working-directory: port
-        run: scripts/check_binary.sh vst/build/nam_vst.so
-
-      - name: Package
-        working-directory: port
-        run: |
-          B=vst/build
-          python3 "$GITHUB_WORKSPACE/mpc-vst-plugins/tools/release.py" \
-            --so "$B/nam_vst.so" --skin "$(ls -d "$B"/skin/*/)" --entry "$B/pluginlist-entry.xml" \
-            --version "$NAM_VERSION" -o "$GITHUB_WORKSPACE/dist" \
-            --id nam --repo jacob-sabella/mpc-vst-nam --license MIT \
-            --user-data models --user-data cabs --user-data models-removed --user-data favorites.txt \
-            --about "Neural Amp Modeler captures as an MPC insert effect, with cab IR, tone, gate, pitch, delay, reverb and an on-device TONE3000 downloader."
-          cd "$GITHUB_WORKSPACE/dist" && sha256sum -- *.zip > SHA256SUMS && cat SHA256SUMS
-
-      - name: Release notes (INSTALL.md's Requirements and Install, as the catalog asks)
-        run: |
-          mkdir -p notes
-          python3 - dist/*.zip > notes/notes.md <<'PY'
-          import re, sys, zipfile
-          z = zipfile.ZipFile(sys.argv[1])
-          md = z.read(next(n for n in z.namelist() if n.endswith("/INSTALL.md"))).decode()
-          keep = [s for s in re.split(r"(?m)^(?=## )", md) if s.startswith(("## Requirements", "## Install (scripted)"))]
-          print("".join(keep).rstrip() + "\n")
-          print("Full instructions, including installing by hand, are in `INSTALL.md` inside the zip.")
-          PY
-          printf '\n---\nBuilt by GitHub Actions from %s@%s with mpc-vst-plugins@%s.\n' \
-            "$GITHUB_REPOSITORY" "${GITHUB_SHA::7}" "${MPC_VST_REF::7}" >> notes/notes.md
-          cat notes/notes.md
-
-      - name: Upload package
-        uses: actions/upload-artifact@v7
-        with:
-          name: release
-          path: dist/*
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload release notes
-        uses: actions/upload-artifact@v7
-        with:
-          name: notes
-          path: notes/notes.md
-          if-no-files-found: error
-          retention-days: 30
-
-  publish:
-    needs: [validate, build]
-    runs-on: ubuntu-latest
-    name: Publish release
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: release
-          path: dist
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: notes
-          path: notes
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-        with:
-          files: dist/*
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          body_path: notes/notes.md
+  vst:
+    uses: open-mpc/mpc-vst-plugins/.github/workflows/vst-release.yml@0dc17120cd7e952e95eeecdd820ac9e495a75ee9
+    permissions: { contents: write }
+    with:
+      tag: nam-vst-v${{ inputs.version }}
+      version: ${{ inputs.version }}
+      tools_ref: 0dc17120cd7e952e95eeecdd820ac9e495a75ee9
+      vst_dir: vst
+      # NAM_VERSION stamps the version into the plugin (scripts/version.py); the checkout has no tags to describe.
+      # The skin is built in the MPC OS 2.x shape, which 3.x reads too (vst/gen_skin.sh).
+      build: >-
+        export NAM_VERSION=${{ inputs.version }} SHADOW_SKIN_MPC_OS=2 &&
+        vst/release_build.sh && scripts/check_binary.sh vst/build/nam_vst.so
+      # The same checks as ci.yml (its jobs skip themselves when called from a workflow_dispatch run).
+      host_test: >-
+        python3 scripts/check_params.py && ./vst/build.sh host &&
+        g++ -O2 -std=c++17 -Ivst vst/pitch_test.cpp -o vst/build/pitch_test && vst/build/pitch_test
+      user_data: models cabs models-removed favorites.txt
+      about: "Neural Amp Modeler captures as an MPC insert effect, with cab IR, tone, gate, pitch, delay, reverb and an on-device TONE3000 downloader."
+      plugin_id: nam
+      license: MIT
+      dry_run: ${{ inputs.dry_run }}

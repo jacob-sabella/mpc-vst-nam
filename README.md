@@ -262,23 +262,22 @@ ssh root@<device-ip> 'NAM_MODELS_DIR=/storage/Synths/NAM/models BENCH_RT=1 /tmp/
 
 ## Releases
 
-Releases are tag-driven and follow [semantic versioning](https://semver.org).
-The tag is the only version source:
+Releases follow [semantic versioning](https://semver.org) and are built by
+[open-mpc/mpc-vst-plugins](https://github.com/open-mpc/mpc-vst-plugins)' shared
+release workflow (its `docs/RELEASING.md`). Run **Release** from the Actions tab
+(or `gh workflow run release.yml -f version=1.2.0`); tick *dry run* to get the
+zips and skin previews as run artifacts without a release.
 
-```sh
-git tag v1.2.0 && git push origin v1.2.0      # or v1.2.0-rc.1 for a pre-release
-```
-
-`.github/workflows/release.yml` checks that the tag is semver and on
-`main`, runs CI, builds the armhf plugin and skin, packages them with
-mpc-vst-plugins' `tools/release.py` (installer, uninstaller, `INSTALL.md`,
-checksums) and publishes a GitHub Release with
-`NAM-<version>-mpc-armv7.zip` attached. The release notes are the
-Requirements and Install sections of the zip's `INSTALL.md`. Tags with a pre-release suffix are
-marked as pre-releases.
+`.github/workflows/release.yml` runs the same checks as CI, builds the armhf
+plugin and skin, and packages them with mpc-vst-plugins' `tools/release.py`
+(installer, uninstaller, `INSTALL.md`, checksums, and the `plugin.json` that
+MPC OS 3.10.1 lists plugins by). It attaches `NAM-<version>-mpc-armv7.zip` and
+`NAM-<version>-mpc-sdk.zip` (Akai's plugin SDK layout) to a **draft** release
+tagged `nam-vst-v<version>`; publish it after testing the zip on a device.
+Releases up to 1.0.10 were tagged `v<version>` by an older, tag-driven workflow.
 
 The build stamps the version into the plugin via `scripts/version.py`: the
-tag on a release, `git describe` for local builds (e.g. `1.2.0-3-gabc1234`).
+release's version input on a release, `git describe` for local builds (e.g. `1.2.0-3-gabc1234`).
 
 ### Repository settings
 
