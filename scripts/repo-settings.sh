@@ -4,13 +4,14 @@
 #
 #   Actions     workflows get a read-only GITHUB_TOKEN and can't approve PRs; workflows from every
 #               outside contributor's fork PR wait for an admin's approval; only GitHub-owned,
-#               verified-creator and explicitly listed actions may run.
+#               verified-creator and explicitly listed actions may run (softprops/action-gh-release, and
+#               mpc-vst-plugins' shared release workflow, which release.yml calls).
 #   merging     squash only; head branches are deleted after merge.
 #   main        no deletion or force-push, linear history, changes through a PR with one approving
 #               review from a code owner (.github/CODEOWNERS), resolved conversations, and passing
 #               "Linux (host)" (ci.yml) and "TruffleHog" (secrets.yml) checks. Admins may bypass.
-#   v* tags     only admins can create, move or delete them, so only admins can publish a release
-#               (release.yml runs on tag push).
+#   release tags  v* (up to 1.0.10) and nam-vst-v* (release.yml's drafts, tagged when published): only admins
+#               can create, move or delete them, so only admins can publish a release.
 #
 #   scripts/repo-settings.sh [owner/repo]
 set -euo pipefail
@@ -24,7 +25,7 @@ gh api -X PUT "repos/$REPO/actions/permissions/workflow" \
 gh api -X PUT "repos/$REPO/actions/permissions" -F enabled=true -f allowed_actions=selected
 gh api -X PUT "repos/$REPO/actions/permissions/selected-actions" --input - <<'JSON'
 {"github_owned_allowed": true, "verified_allowed": true,
- "patterns_allowed": ["softprops/action-gh-release@*"]}
+ "patterns_allowed": ["softprops/action-gh-release@*", "open-mpc/mpc-vst-plugins/.github/workflows/*@*"]}
 JSON
 PRIVATE=$(gh api "repos/$REPO" --jq .private)
 
@@ -77,7 +78,7 @@ JSON
 
 ruleset "release tags" <<JSON
 {"name": "release tags", "target": "tag", "enforcement": "active",
- "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
+ "conditions": {"ref_name": {"include": ["refs/tags/v*", "refs/tags/nam-vst-v*"], "exclude": []}},
  "bypass_actors": [{"actor_id": $ADMIN_ROLE, "actor_type": "RepositoryRole", "bypass_mode": "always"}],
  "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}, {"type": "non_fast_forward"}]}
 JSON
