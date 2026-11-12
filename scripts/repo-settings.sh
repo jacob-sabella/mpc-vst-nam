@@ -5,7 +5,8 @@
 #   Actions     workflows get a read-only GITHUB_TOKEN and can't approve PRs; workflows from every
 #               outside contributor's fork PR wait for an admin's approval; only GitHub-owned,
 #               verified-creator and explicitly listed actions may run (softprops/action-gh-release, and
-#               mpc-vst-plugins' shared release workflow, which release.yml calls).
+#               mpc-vst-plugins' shared release workflow, which release.yml calls, and the
+#               mlugg/setup-zig it references: GitHub checks every uses: line, skipped steps too).
 #   merging     squash only; head branches are deleted after merge.
 #   main        no deletion or force-push, linear history, changes through a PR with one approving
 #               review from a code owner (.github/CODEOWNERS), resolved conversations, and passing
@@ -25,7 +26,8 @@ gh api -X PUT "repos/$REPO/actions/permissions/workflow" \
 gh api -X PUT "repos/$REPO/actions/permissions" -F enabled=true -f allowed_actions=selected
 gh api -X PUT "repos/$REPO/actions/permissions/selected-actions" --input - <<'JSON'
 {"github_owned_allowed": true, "verified_allowed": true,
- "patterns_allowed": ["softprops/action-gh-release@*", "open-mpc/mpc-vst-plugins/.github/workflows/*@*"]}
+ "patterns_allowed": ["softprops/action-gh-release@*", "open-mpc/mpc-vst-plugins/.github/workflows/*@*",
+                     "mlugg/setup-zig@*"]}
 JSON
 PRIVATE=$(gh api "repos/$REPO" --jq .private)
 
