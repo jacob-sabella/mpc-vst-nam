@@ -1244,7 +1244,7 @@ static float getParameter(AEffect *e, int32_t i) {
 }
 
 /* Flush denormals to zero for the audio thread: decaying reverb/IIR/NAM tails otherwise fall into
- * subnormals, which ARM VFP handles far slower -- the classic "CPU spikes when the note dies" bug. */
+ * subnormals, which ARM VFP (and aarch64) handle far slower -- the classic "CPU spikes when the note dies" bug. */
 struct ScopedFlushToZero {   /* restores the host's FPSCR on exit, like JUCE's ScopedNoDenormals */
 #if defined(__arm__)
     uint32_t saved;
@@ -1253,6 +1253,13 @@ struct ScopedFlushToZero {   /* restores the host's FPSCR on exit, like JUCE's S
         __asm__ volatile("vmsr fpscr, %0" : : "r"(saved | (1u << 24)));
     }
     ~ScopedFlushToZero() { __asm__ volatile("vmsr fpscr, %0" : : "r"(saved)); }
+#elif defined(__aarch64__)   /* Gen2: the same FZ bit (24), in FPCR */
+    uint64_t saved;
+    ScopedFlushToZero() {
+        __asm__ volatile("mrs %0, fpcr" : "=r"(saved));
+        __asm__ volatile("msr fpcr, %0" : : "r"(saved | (1ull << 24)));
+    }
+    ~ScopedFlushToZero() { __asm__ volatile("msr fpcr, %0" : : "r"(saved)); }
 #endif
 };
 
