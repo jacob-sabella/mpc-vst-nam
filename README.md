@@ -102,8 +102,17 @@ separate GUI process: the Tone3000 sign-in page is served by the plugin itself.
 
 ## Requirements
 
-- A first-generation MPC OS standalone device (32-bit ARM). Developed and
-  measured on an MPC Key 37 (RK3288). Other Gen1 devices are untested.
+- An MPC OS standalone device: Gen1 (32-bit ARM, the `-mpc-armv7.zip`) or
+  Gen2 (64-bit ARM: MPC Live III, One/Key G2, and the MPC Sample, the
+  `-mpc-aarch64.zip`). Developed and measured on an MPC Key 37 (RK3288).
+- On the MPC Sample, NAM draws its own page on the screen when
+  [mpc-addin-sample-draw-handler](https://github.com/jacob-sabella/mpc-addin-sample-draw-handler)
+  is installed: the model, LITE/FULL, the cab and in/out meters. The keys above
+  the screen and the data dial step through your local models (no TONE3000
+  there), and the third key switches K1-K3 between the AMP (input, gate,
+  output), TONE (bass, mid, treble) and FX (pitch, delay, reverb) banks.
+  The Sample has no plugin browser: add NAM with
+  [mpc-addin-sample-rack](https://github.com/jacob-sabella/mpc-addin-sample-rack).
 - **Root shell access (SSH)** to the device. Stock MPC OS doesn't offer
   this, so you need a modded unit.
 - A network connection, for the TONE3000 tab only.
@@ -118,9 +127,12 @@ checkout for the skin:
 
 ```sh
 ./vst/build.sh                          # compile vst/build/nam_vst.so (+ vst/build/bench)
+MPC_VST=../mpc-vst-plugins ./vst/build.sh aarch64   # Gen2: vst/build/aarch64/nam_vst.so, with the MPC Sample page
 MPC_VST=../mpc-vst-plugins ./vst/gen_skin.sh   # build the MPC skin into vst/build/skin/
 ```
 
+- The Gen2 build runs in `arm64v8/gcc:12-bookworm` (`--platform linux/arm64`,
+  glibc 2.36). Without `MPC_VST` it builds without the MPC Sample page.
 - Building the NAM core under emulation takes a while. With a local armv7
   hard-float cross toolchain (bootlin `armv7-eabihf--glibc--stable`),
   `ARM_TC=<toolchain dir> ./vst/build.sh` does the same build natively.
@@ -245,7 +257,9 @@ ssh root@<device-ip> 'NAM_MODELS_DIR=/storage/Synths/NAM/models BENCH_RT=1 /tmp/
 - Mono inside. The processed signal is the same on both outputs.
 - Cab IRs are truncated to ~93 ms (direct convolution).
 - Parameters are append-only (see [How it works](#how-it-works)).
-- Developed on a Key 37. Other Gen1 MPC OS devices are untested.
+- Developed on a Key 37. Other devices are only as tested as each
+  release's `tested.json` says.
+- The [CPU](#cpu) figures are for the Key 37 (Gen1).
 
 ## Credit
 
@@ -269,10 +283,10 @@ release workflow (its `docs/RELEASING.md`). Run **Release** from the Actions tab
 zips and skin previews as run artifacts without a release.
 
 `.github/workflows/release.yml` runs the same checks as CI, builds the armhf
-plugin and skin, and packages them with mpc-vst-plugins' `tools/release.py`
+and aarch64 plugins and the skin, and packages them with mpc-vst-plugins' `tools/release.py`
 (installer, uninstaller, `INSTALL.md`, checksums, and the `plugin.json` that
-MPC OS 3.10.1 lists plugins by). It attaches `NAM-<version>-mpc-armv7.zip` and
-`NAM-<version>-mpc-sdk.zip` (Akai's plugin SDK layout) to a **draft** release
+MPC OS 3.10.1 lists plugins by). It attaches `NAM-<version>-mpc-armv7.zip`,
+`NAM-<version>-mpc-aarch64.zip` (Gen2) and `NAM-<version>-mpc-sdk.zip` (Akai's plugin SDK layout) to a **draft** release
 tagged `nam-vst-v<version>`; publish it after testing the zip on a device.
 Releases up to 1.0.10 were tagged `v<version>` by an older, tag-driven workflow.
 

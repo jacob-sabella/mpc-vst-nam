@@ -30,7 +30,7 @@ jobs:
       # The skin is built in the MPC OS 2.x shape, which 3.x reads too (vst/gen_skin.sh).
       build: >-
         export NAM_VERSION=${{ inputs.version }} SHADOW_SKIN_MPC_OS=2 &&
-        vst/release_build.sh && scripts/check_binary.sh vst/build/nam_vst.so
+        vst/release_build.sh && scripts/check_binary.sh vst/build/nam_vst.so vst/build/aarch64/nam_vst.so
       # The same checks as ci.yml (its jobs skip themselves when called from a workflow_dispatch run).
       host_test: >-
         python3 scripts/check_params.py && ./vst/build.sh host &&

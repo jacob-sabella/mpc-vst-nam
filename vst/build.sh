@@ -10,6 +10,9 @@
 #   ARM_TC=<toolchain> vst/build.sh
 #                         same build with a local armv7 hard-float cross toolchain (bootlin
 #                         armv7-eabihf--glibc--stable): much faster than emulation
+#   vst/build.sh aarch64  Gen2 build (MPC Live III, One/Key G2, MPC Sample) in arm64v8/gcc:12-bookworm (glibc 2.36, under
+#                         the 2.39 Gen2 ceiling) under Docker: vst/build/aarch64/nam_vst.so and bench. With MPC_VST set it
+#                         includes the MPC Sample screen page
 #   vst/build.sh host     x86 build + vst/build/host_test for an offline sanity check
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -36,6 +39,31 @@ if [ "${1:-}" = host ]; then
 fi
 
 python3 vst/gen_entry.py
+
+if [ "${1:-}" = aarch64 ]; then
+  # armv8.2-a: both Gen2 SoCs (RK3588: Cortex-A76/A55; RK3566 in the MPC Sample: A55). NEON is part of the base ISA.
+  A64="${NAM_FASTMATH--ffast-math} -march=armv8.2-a -mtune=cortex-a76"
+  mkdir -p vst/build/aarch64
+  # The MPC Sample's screen page (vst/nam_vst.cpp, NAM_SAMPLE_PAGE) needs mpc-vst-plugins' wrapper/sample_draw.h: with MPC_VST
+  # set (the release workflow sets it), its wrapper folder is mounted read-only and put on the include path.
+  MV=()
+  if [ -n "${MPC_VST:-}" ] && [ -f "$MPC_VST/wrapper/sample_draw.h" ]; then
+    MV=(-v "$(cd "$MPC_VST/wrapper" && pwd)":/mv:ro); INC="$INC -I/mv"
+  else
+    echo "warning: MPC_VST is not set (or has no wrapper/sample_draw.h): building without the MPC Sample page" >&2
+  fi
+  docker run --rm --platform linux/arm64 -u "$(id -u):$(id -g)" -v "$PWD":/b "${MV[@]}" -w /b \
+    -e DEFS="$DEFS" -e A64="$A64" -e LINK="$LINK" -e INC="$INC" -e SRC="$SRC" arm64v8/gcc:12-bookworm bash -euc '
+    g++ $DEFS $A64 $LINK $INC $SRC -ldl -o vst/build/aarch64/nam_vst.so
+    gcc -O2 $A64 -o vst/build/aarch64/bench vst/bench.c -ldl -lm
+    strip vst/build/aarch64/nam_vst.so vst/build/aarch64/bench
+    echo "-- exported --"; readelf --dyn-syms -W vst/build/aarch64/nam_vst.so | grep -E " GLOBAL .* [0-9]+ [A-Za-z]" | grep -v UND
+    echo "-- needed --"; readelf -d vst/build/aarch64/nam_vst.so | grep NEEDED
+    echo "-- highest glibc (Gen2 limit 2.39) --"; readelf -V vst/build/aarch64/nam_vst.so | grep -o "GLIBC_[0-9.]*" | sort -uV | tail -1
+  '
+  md5sum vst/build/aarch64/nam_vst.so
+  exit
+fi
 
 if [ -n "${ARM_TC:-}" ]; then
   X="$ARM_TC/bin/arm-linux-"
