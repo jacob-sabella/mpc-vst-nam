@@ -187,10 +187,15 @@ Put `.nam` captures in `jacob-sabella - VST - NAM/models/` (one folder level of 
 keep that folder (or its `models/` and `cabs/`) when you update: replace only the `.so` files,
 `plugin.json`, `version.xml` and `Plugin Skins`, or move your `models/` and `cabs/` into the new copy.
 
-**Upgrading from an older install** (a `Synths` copy from 3.9.1 or the installer app): MPC may keep drawing that old
-copy's `Plugin Skins` over the new one. Rename or remove `Plugin Skins` in the old
-`.../Synths/jacob-sabella - VST - NAM/` folder and restart MPC (saved projects still load, using the `VST2 Plugins` copy
-once the old one is gone). Copy your old `.../Synths/NAM/models/` and `cabs/` into the new folder first.
+**Upgrading from an older install** (a `Synths` copy from 3.9.1 or the installer app):
+
+1. Copy your user data into the new `VST2 Plugins` folder first. For catalog, installer or `install.sh` installs it is in
+   `.../Synths/jacob-sabella - VST - NAM/` (`models/`, `cabs/`, plus `models-removed/` and `favorites.txt`). For a hand
+   install it is `.../Synths/NAM/models/` and `cabs/`.
+2. Remove the old copy. While it exists, saved projects keep loading the old NAM binary, so the upgrade does not take
+   effect for them. MPC may also keep drawing the old copy's `Plugin Skins` over the new one. Remove the old plugin
+   (the old route's uninstall, or delete its folder once your data is moved) and restart MPC. Saved projects then use the
+   `VST2 Plugins` copy. If you only want the new skin, rename the old `Plugin Skins` instead, but projects still load the old binary.
 The migration script `tools/vst2_migrate.sh` in
 [mpc-vst-plugins](https://github.com/open-mpc/mpc-vst-plugins) does both for every installed plugin over SSH
 (dry run by default).
