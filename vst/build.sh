@@ -33,7 +33,7 @@ LINK="-fPIC -shared -static-libstdc++ -static-libgcc -pthread -Wl,--no-undefined
 
 if [ "${1:-}" = host ]; then
   ${CXX:-clang++} $DEFS -fPIC -shared $INC $SRC -ldl -o vst/build/nam_vst.host.so
-  ${CC:-cc} -O2 -o vst/build/host_test vst/host_test.c -ldl -lm
+  ${CC:-cc} -O2 -o vst/build/host_test vst/host_test.c -ldl -lm -pthread
   vst/build/host_test vst/build/nam_vst.host.so
   exit
 fi

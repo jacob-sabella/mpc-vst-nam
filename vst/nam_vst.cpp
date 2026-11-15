@@ -990,21 +990,28 @@ static bool t3k_poll_once(Nam *n) {
     return changed || n->t3k_status_text != before;
 }
 
-/* Model as a set of parameter 0 asks: load the model it points at, if that's another one. */
-static void set_model_now(Nam *n, float v) {
+/* Model as a set of parameter 0 asks: load the model it points at, if that's another one. true = loaded. */
+static bool set_model_now(Nam *n, float v) {
     std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
     int nopts = (int)n->names.size();
     if (nopts > 1) {
         int idx = (int)lroundf(v * (nopts - 1));
-        if (idx != n->model_idx) { load_index(n, idx); reveal_current(n); ask_redraw(n); }
+        if (idx != n->model_idx) { load_index(n, idx); reveal_current(n); return true; }
     }
+    return false;
 }
-/* Apply a held Model set, if any. Taken under lib_mtx, so of two threads flushing, the newer set always lands last. */
+/* Apply a held Model set, if any. Taken under lib_mtx, so of two threads flushing, the newer set always lands last.
+ * The redraw comes after lib_mtx is let go: on the poll thread, a redraw that re-enters effGetParamDisplay for a
+ * TONE3000 row would take t3k_mtx under lib_mtx, the reverse of a TONE3000 tap's t3k_mtx -> redraw -> lib_mtx. */
 static void flush_model(Nam *n) {
     if (n->held_model.load() < 0.f) return;
-    std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
-    float v = n->held_model.exchange(-1.f);
-    if (v >= 0.f) set_model_now(n, v);
+    bool loaded = false;
+    {
+        std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
+        float v = n->held_model.exchange(-1.f);
+        if (v >= 0.f) loaded = set_model_now(n, v);
+    }
+    if (loaded) ask_redraw(n);
 }
 /* Poll thread: a held Model set waits until the audio thread begins a block after it (50 ms at most, for when no audio
  * runs), then loads here: the load reads a file and builds the model, which the audio thread must never do. */

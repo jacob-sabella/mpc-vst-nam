@@ -1,5 +1,6 @@
 /* Offline smoke test: dlopen the host .so, check the AEffect ABI, push audio through. */
 #include <dlfcn.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <math.h>
@@ -43,6 +44,37 @@ static int nam_loads(int fd, char *which, size_t sz) {
             snprintf(which + strlen(which), sz - strlen(which), "%s%s", which[0] ? " " : "", ev->name);
         }
     return count;
+}
+
+/* Host callback for the model instance. On each redraw request (audioMasterUpdateDisplay), another thread reads
+ * Model back, as a UI thread might while the plugin's own thread is in the redraw. It must get in at once: a redraw
+ * made with the plugin's library lock still held can deadlock against a UI thread that waits on that lock. */
+static volatile int redraws, redraws_locked;
+static int probe_gen;
+static int probe_done;   /* the gen of the last probe that got in (__atomic) */
+static void *probe(void *arg) {
+    void **a = arg;
+    AEffect *e = a[0];
+    int gen = (int)(intptr_t)a[1];
+    free(a);
+    e->getParameter(e, 0);
+    __atomic_store_n(&probe_done, gen, __ATOMIC_SEQ_CST);
+    return 0;
+}
+static intptr_t model_host(AEffect *e, int32_t op, int32_t idx, intptr_t v, void *p, float o) {
+    (void)idx; (void)v; (void)p; (void)o;
+    if (op == 1) return 2400;   /* audioMasterVersion */
+    if (op != 42 || !e) return 0;   /* audioMasterUpdateDisplay */
+    redraws++;
+    void **arg = malloc(2 * sizeof *arg);
+    pthread_t th;
+    int gen = __atomic_add_fetch(&probe_gen, 1, __ATOMIC_SEQ_CST);
+    arg[0] = e; arg[1] = (void *)(intptr_t)gen;
+    if (pthread_create(&th, 0, probe, arg)) { free(arg); return 0; }
+    pthread_detach(th);   /* a probe stuck behind a held lock finishes once the redraw returns */
+    for (int ms = 0; ms < 500 && __atomic_load_n(&probe_done, __ATOMIC_SEQ_CST) != gen; ms++) usleep(1000);
+    if (__atomic_load_n(&probe_done, __ATOMIC_SEQ_CST) != gen) redraws_locked++;
+    return 0;
 }
 
 /* `ms` of 128-frame blocks, as the audio thread runs them, with no read of any parameter in between. */
@@ -166,7 +198,7 @@ int main(int argc, char **argv) {
                        "\"bias\": false}, \"weights\": [1.0], \"sample_rate\": 48000}\n", f); fclose(f); }
     }
     setenv("NAM_MODELS_DIR", mdir, 1);
-    AEffect *m = entry(0);   /* loads a.nam, before the watch */
+    AEffect *m = entry(model_host);   /* loads a.nam, before the watch */
     int ifd = inotify_init1(IN_NONBLOCK);
     if (!m || ifd < 0 || inotify_add_watch(ifd, mdir, IN_OPEN) < 0) { printf("model      = BAD no second instance or inotify\n"); fail = 1; }
     else {
@@ -196,6 +228,9 @@ int main(int argc, char **argv) {
             printf("model      = %-2s %.1f after %s, %d load%s%s%s %s\n", t, got, steps[k].what, loads, loads == 1 ? "" : "s",
                    loads ? ": " : "", which, ok ? "ok" : (fail = 1, "BAD"));
         }
+        printf("model      = %d redraws, %d with the library lock held %s\n", redraws, redraws_locked,
+               redraws >= 3 && !redraws_locked ? "ok" : (fail = 1, "BAD"));
+        usleep(600000);   /* any stuck probe gets in before the close */
         m->dispatcher(m, effClose, 0, 0, 0, 0);
     }
     if (ifd >= 0) close(ifd);
