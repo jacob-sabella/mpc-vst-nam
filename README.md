@@ -196,9 +196,10 @@ keep that folder (or its `models/` and `cabs/`) when you update: replace only th
    effect for them. MPC may also keep drawing the old copy's `Plugin Skins` over the new one. Remove the old plugin
    (the old route's uninstall, or delete its folder once your data is moved) and restart MPC. Saved projects then use the
    `VST2 Plugins` copy. If you only want the new skin, rename the old `Plugin Skins` instead, but projects still load the old binary.
+
 The migration script `tools/vst2_migrate.sh` in
-[mpc-vst-plugins](https://github.com/open-mpc/mpc-vst-plugins) does both for every installed plugin over SSH
-(dry run by default).
+[mpc-vst-plugins](https://github.com/open-mpc/mpc-vst-plugins) renames the old `Plugin Skins` for every installed plugin
+over SSH (dry run by default); it does not remove the old copy, so saved projects keep the old binary until you do.
 
 ### MPC OS 3.9.1 and the Force: over SSH
 
