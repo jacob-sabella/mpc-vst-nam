@@ -113,10 +113,13 @@ separate GUI process: the Tone3000 sign-in page is served by the plugin itself.
   output), TONE (bass, mid, treble) and FX (pitch, delay, reverb) banks.
   The Sample has no plugin browser: add NAM with
   [mpc-addin-sample-rack](https://github.com/jacob-sabella/mpc-addin-sample-rack).
-- **Root shell access (SSH)** to the device. Stock MPC OS doesn't offer
-  this, so you need a modded unit.
+- **MPC OS 3.10.1 or later** (Gen1 or Gen2 MPC): no SSH needed. Copy the plugin
+  folder to a drive and switch on External Plugin Support (see
+  [Installation](#installation)). On **MPC OS 3.9.1 and on the Force**, and on
+  the MPC Sample, **root shell access (SSH)** to the device is needed instead,
+  and stock firmware doesn't offer it, so that route needs a modded unit.
 - A network connection, for the TONE3000 tab only.
-- Installing plugins this way is unofficial. Back up first and use at your
+- Installing third-party plugins is unofficial. Back up first and use at your
   own risk.
 
 ## Build
@@ -159,7 +162,44 @@ against the target device before shipping.
 
 ## Installation
 
-### From the MPC OS Plugin Catalog (Recommended)
+Pick the route for your MPC OS:
+
+| Your unit | Route |
+|---|---|
+| MPC OS **3.10.1 or later**, Gen1 or Gen2 | [Plugin folder in `VST2 Plugins`](#mpc-os-3101-and-later-plugin-folder) (no SSH) |
+| MPC OS 3.9.1, or the Force | [Catalog, installer or release zip over SSH](#mpc-os-391-and-the-force-over-ssh) |
+| MPC Sample | The SSH route below, with the Gen2 zip |
+
+### MPC OS 3.10.1 and later: plugin folder
+
+1. Get `NAM-<version>-mpc-sdk.zip` from the [MPC OS Plugin Catalog](https://open-mpc.github.io/)
+   or the [releases](https://github.com/jacob-sabella/mpc-vst-nam/releases). It holds one folder, `jacob-sabella - VST - NAM`,
+   with both the Gen1 (32-bit) and Gen2 (64-bit) builds; MPC picks the right one.
+2. Unzip it into a folder named exactly `VST2 Plugins` at the root of a drive MPC reads (a USB stick,
+   an SD card or the internal drive), so you end up with
+   `<drive>/VST2 Plugins/jacob-sabella - VST - NAM/plugin.json` next to the `.so` files.
+3. On the MPC, open **Preferences > Enhancements** and switch on **Enhancements** and **External Plugin Support**.
+   With External Plugin Support off, plugins are hidden and projects that use them won't load them.
+4. Restart MPC. NAM appears in the plugin browser under **External Plugins**; add it as an insert effect.
+
+Put `.nam` captures in `jacob-sabella - VST - NAM/models/` (one folder level of packs is fine) and cab IRs
+(`.wav`) in `cabs/`, or download captures from the TONE3000 tab. They live inside the plugin folder, so
+keep that folder (or its `models/` and `cabs/`) when you update: replace only the `.so` files,
+`plugin.json`, `version.xml` and `Plugin Skins`, or move your `models/` and `cabs/` into the new copy.
+
+**Upgrading from an older install** (a `Synths` copy from 3.9.1 or the installer app): MPC may keep drawing that old
+copy's `Plugin Skins` over the new one. Rename or remove `Plugin Skins` in the old
+`.../Synths/jacob-sabella - VST - NAM/` folder and restart MPC (saved projects still load, using the `VST2 Plugins` copy
+once the old one is gone). Copy your old `.../Synths/NAM/models/` and `cabs/` into the new folder first.
+The migration script `tools/vst2_migrate.sh` in
+[mpc-vst-plugins](https://github.com/open-mpc/mpc-vst-plugins) does both for every installed plugin over SSH
+(dry run by default).
+
+### MPC OS 3.9.1 and the Force: over SSH
+
+These routes need **root SSH access** to the device (see [Requirements](#requirements)).
+
+#### From the MPC OS Plugin Catalog
 
 NAM is listed in the
 [MPC OS Plugin Catalog](https://open-mpc.github.io/), which
@@ -178,12 +218,10 @@ shows each release with its checksum. Either:
 
   The same script also does `update`, `remove nam` and `list`.
 
-Both need root SSH access (see [Requirements](#requirements)).
+#### From a release zip
 
-### From a release zip
-
-Unzip a release (or build the payload yourself), copy it to the device,
-and run its installer:
+Unzip a per-build release (`-mpc-armv7.zip` for Gen1 and the Force, `-mpc-aarch64.zip` for Gen2, or build the
+payload yourself), copy it to the device, and run its installer:
 
 ```sh
 scp -r NAM-<version> root@<device-ip>:/tmp/
@@ -199,7 +237,7 @@ Then add **NAM** (listed under jacob-sabella) as an insert effect. Put `.nam` ca
 download them from the TONE3000 tab. Upgrading or uninstalling keeps your
 `models/`, `cabs/`, `models-removed/` and `favorites.txt`.
 
-### Install by hand
+#### By hand
 
 1. Copy the files:
    - `vst/build/nam_vst.so` → `/storage/Synths/NAM/nam_vst.so`
@@ -215,8 +253,12 @@ download them from the TONE3000 tab. Upgrading or uninstalling keeps your
 5. Start MPC: `systemctl start acvs`. If MPC comes up with default
    settings, restore your backup, because the XML was malformed.
 
-For development, `scripts/deploy.sh <device-ip>` pushes a fresh build and
-skin over an existing install, keeping a backup of both, and restarts MPC.
+### Development deploy
+
+`scripts/deploy.sh <device-ip>` pushes a fresh build and skin over an existing 3.9.1 install (under `Synths`), keeping a
+backup of both, and restarts MPC. For MPC OS 3.10.1 and later, `scripts/deploy.sh <device-ip> --vst2 <drive-root>
+[--arch armv7|aarch64]` does the same into `<drive-root>/VST2 Plugins/jacob-sabella - VST - NAM/`, in the layout of
+the SDK zip. Both replace only the binary, skin and `plugin.json` and never touch `models/` or `cabs/`.
 
 ## Tone3000 sign-in
 
