@@ -6,6 +6,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/inotify.h>
+#include <sys/stat.h>
 
 typedef struct AEffect AEffect;
 typedef intptr_t (*amc)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
@@ -25,7 +27,28 @@ struct AEffect {
     void (*processDoubleReplacing)(AEffect *, double **, double **, int32_t);
     char future[56];
 };
-enum { effGetParamDisplay = 7, effGetParamName = 8, effGetPlugCategory = 35, effGetEffectName = 45 };
+enum { effClose = 1, effGetParamDisplay = 7, effGetParamName = 8, effGetPlugCategory = 35, effGetEffectName = 45 };
+
+/* Model loads since the last call: the .nam files opened in the watched folder, their names added to `which`. */
+static int nam_loads(int fd, char *which, size_t sz) {
+    char buf[4096] __attribute__((aligned(__alignof__(struct inotify_event))));
+    int count = 0;
+    ssize_t len;
+    while ((len = read(fd, buf, sizeof buf)) > 0)
+        for (char *q = buf; q < buf + len; q += sizeof(struct inotify_event) + ((struct inotify_event *)q)->len) {
+            struct inotify_event *ev = (struct inotify_event *)q;
+            size_t nl = ev->len ? strlen(ev->name) : 0;
+            if (!(ev->mask & IN_OPEN) || nl < 4 || strcmp(ev->name + nl - 4, ".nam")) continue;
+            count++;
+            snprintf(which + strlen(which), sz - strlen(which), "%s%s", which[0] ? " " : "", ev->name);
+        }
+    return count;
+}
+
+/* `ms` of 128-frame blocks, as the audio thread runs them, with no read of any parameter in between. */
+static void run_blocks(AEffect *e, float **in, float **out, int ms) {
+    for (int t = 0; t < ms; t += 3) { e->processReplacing(e, in, out, 128); usleep(3000); }
+}
 
 int main(int argc, char **argv) {
     const char *so = argc > 1 ? argv[1] : "./nam_vst.host.so";
@@ -127,6 +150,60 @@ int main(int argc, char **argv) {
         printf("pitch      = %+.0f after a direct set %s\n", st, fabsf(st - 12) < 1e-4f ? "ok" : (fail = 1, "BAD"));
     }
 
+    /* Model is parameter 0, and MPC's host sets parameter 0 to the far end of its range and straight back (0.0 instead
+     * when it is at 0.5 or more) on insert and on every STOP. That pair must load no model; a real change (a Q-Link, the
+     * data wheel, the skin) still loads, at the next block or when the host reads it back. A second instance, on a
+     * folder of three models, watched with inotify for which .nam files get opened. */
+    char base[] = "/tmp/nam_host_test.XXXXXX", mdir[64], path[96];
+    const char *models[3] = {"a", "b", "c"};
+    if (!mkdtemp(base)) { perror("mkdtemp"); return 1; }
+    snprintf(mdir, sizeof mdir, "%s/models", base);
+    mkdir(mdir, 0755);
+    for (int k = 0; k < 3; k++) {
+        snprintf(path, sizeof path, "%s/%s.nam", mdir, models[k]);
+        FILE *f = fopen(path, "w");
+        if (f) { fputs("{\"version\": \"0.5.0\", \"architecture\": \"Linear\", \"config\": {\"receptive_field\": 1, "
+                       "\"bias\": false}, \"weights\": [1.0], \"sample_rate\": 48000}\n", f); fclose(f); }
+    }
+    setenv("NAM_MODELS_DIR", mdir, 1);
+    AEffect *m = entry(0);   /* loads a.nam, before the watch */
+    int ifd = inotify_init1(IN_NONBLOCK);
+    if (!m || ifd < 0 || inotify_add_watch(ifd, mdir, IN_OPEN) < 0) { printf("model      = BAD no second instance or inotify\n"); fail = 1; }
+    else {
+        char which[256] = "", t[64];
+        struct { const char *what; float to; int nudge, blocks, read_back, want_loads; const char *want; } steps[] = {
+            {"a set, then blocks", 0.5f, 0, 1, 0, 1, "b"},
+            {"host nudge, then blocks", 0, 1, 1, 0, 0, "b"},
+            {"a set, read back at once", 0.f, 0, 0, 1, 1, "a"},
+            {"host nudge, no blocks", 0, 1, 0, 0, 0, "a"},
+            {"a set, no blocks or reads", 1.f, 0, 0, 0, 1, "c"},
+            {"host nudge, read back at once", 0, 1, 0, 1, 0, "c"},
+        };
+        for (unsigned k = 0; k < sizeof steps / sizeof steps[0]; k++) {
+            float old = m->getParameter(m, 0), want_v = steps[k].nudge ? old : steps[k].to;
+            nam_loads(ifd, which, sizeof which);   /* drop anything before */
+            which[0] = 0;
+            if (steps[k].nudge) { m->setParameter(m, 0, old < 0.5f ? 1.f : 0.f); m->setParameter(m, 0, old); }
+            else m->setParameter(m, 0, steps[k].to);
+            if (steps[k].blocks) run_blocks(m, in, out, 120);
+            else if (!steps[k].read_back) usleep(120000);   /* the poll thread applies it on its own */
+            int loads = nam_loads(ifd, which, sizeof which);   /* read before the checks below, which apply it */
+            float got = m->getParameter(m, 0);
+            memset(t, 0, sizeof t);
+            m->dispatcher(m, effGetParamDisplay, 0, 0, t, 0);
+            loads += nam_loads(ifd, which, sizeof which);
+            int ok = loads == steps[k].want_loads && fabsf(got - want_v) < 1e-6f && !strcmp(t, steps[k].want);
+            printf("model      = %-2s %.1f after %s, %d load%s%s%s %s\n", t, got, steps[k].what, loads, loads == 1 ? "" : "s",
+                   loads ? ": " : "", which, ok ? "ok" : (fail = 1, "BAD"));
+        }
+        m->dispatcher(m, effClose, 0, 0, 0, 0);
+    }
+    if (ifd >= 0) close(ifd);
+    for (int k = 0; k < 3; k++) { snprintf(path, sizeof path, "%s/%s.nam", mdir, models[k]); unlink(path); }
+    rmdir(mdir);
+    rmdir(base);
+
+    e->dispatcher(e, effClose, 0, 0, 0, 0);
     printf(fail ? "\nFAILED\n" : "\nPASSED\n");
     return fail;
 }

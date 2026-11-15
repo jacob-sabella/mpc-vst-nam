@@ -37,6 +37,7 @@
 #include <memory>
 #include <string>
 #include <mutex>
+#include <condition_variable>
 #include <thread>
 #include <atomic>
 #include <chrono>
@@ -578,6 +579,10 @@ struct Nam {
     std::unique_ptr<nam::DSP> dsp;
     /* Peak levels since the screen page last looked (it takes them with exchange(0)): written by the audio thread. */
     std::atomic<float> in_peak{0.f}, out_peak{0.f};
+    /* Model (parameter 0) as a host set left it, held until the audio thread begins its next block or something reads it
+     * (see setParameter); -1 = none held. blocks counts blocks begun; held_block is that count when it was set. */
+    std::atomic<float> held_model{-1.f};
+    std::atomic<unsigned> blocks{0}, held_block{0};
 #ifdef NAM_SAMPLE_PAGE
     sdc_page page;
     float in_show = 0.f, out_show = 0.f;   /* the page's falling meters, dBFS-mapped 0..1 */
@@ -609,6 +614,8 @@ struct Nam {
     std::recursive_mutex t3k_mtx;   /* recursive: ask_redraw under it may re-enter effGetParamDisplay */
     std::thread poll_thread;        /* shared by the TONE3000 poll and the model-library rescan */
     std::atomic<bool> poll_run{false};
+    std::mutex poll_mtx;              /* with poll_cv: wakes the poll thread early, for a held Model or to stop */
+    std::condition_variable poll_cv;
     std::atomic<bool> t3k_active{false};
     int t3k_sort = 0;              /* 0=trending, 1=newest, 2=downloads, 3=favorites (matches SORT enum_h options) */
     int t3k_arch = 0;              /* 0=MPC (A2 lite/feather/nano), 1=A2 (all sizes), 2=STD (A1+custom) */
@@ -983,9 +990,34 @@ static bool t3k_poll_once(Nam *n) {
     return changed || n->t3k_status_text != before;
 }
 
+/* Model as a set of parameter 0 asks: load the model it points at, if that's another one. */
+static void set_model_now(Nam *n, float v) {
+    std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
+    int nopts = (int)n->names.size();
+    if (nopts > 1) {
+        int idx = (int)lroundf(v * (nopts - 1));
+        if (idx != n->model_idx) { load_index(n, idx); reveal_current(n); ask_redraw(n); }
+    }
+}
+/* Apply a held Model set, if any. Taken under lib_mtx, so of two threads flushing, the newer set always lands last. */
+static void flush_model(Nam *n) {
+    if (n->held_model.load() < 0.f) return;
+    std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
+    float v = n->held_model.exchange(-1.f);
+    if (v >= 0.f) set_model_now(n, v);
+}
+/* Poll thread: a held Model set waits until the audio thread begins a block after it (50 ms at most, for when no audio
+ * runs), then loads here: the load reads a file and builds the model, which the audio thread must never do. */
+static void apply_held_model(Nam *n) {
+    for (int ms = 0; ms < 50 && n->held_model.load() >= 0.f && n->blocks.load() == n->held_block.load(); ms++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    flush_model(n);
+}
+
 /* One 100ms poll thread per instance, started lazily the first time the plugin UI asks for any
- * BROWSE/TONE3000 text -- so JUCE's plugin scan never spins a thread. It watches the model folders
- * (~1s) and, once the TONE3000 tab has been shown, the Tone3000 service's answers. */
+ * BROWSE/TONE3000 text or the host sets Model -- so JUCE's plugin scan never spins a thread. It watches the
+ * model folders (~1s), loads a held Model set (setParameter) and, once the TONE3000 tab has been shown,
+ * the Tone3000 service's answers. */
 static void poll_start(Nam *n) {
     if (n->poll_run.exchange(true)) return;
     n->poll_thread = std::thread([n] {
@@ -994,12 +1026,21 @@ static void poll_start(Nam *n) {
             if (n->t3k_active.load() && t3k_poll_once(n)) redraw = true;
             if (tick % 10 == 0 && lib_poll_once(n)) redraw = true;
             if (redraw) ask_redraw(n);
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            /* 100 ms to the next tick, serving a held Model set (setParameter) as soon as one comes */
+            auto next = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+            std::unique_lock<std::mutex> lk(n->poll_mtx);
+            while (n->poll_cv.wait_until(lk, next, [n] { return !n->poll_run.load() || n->held_model.load() >= 0.f; }) &&
+                   n->poll_run.load()) {
+                lk.unlock();
+                apply_held_model(n);
+                lk.lock();
+            }
         }
     });
 }
 static void poll_stop(Nam *n) {
-    if (n->poll_run.exchange(false) && n->poll_thread.joinable()) n->poll_thread.join();
+    if (n->poll_run.exchange(false)) { std::lock_guard<std::mutex> lk(n->poll_mtx); n->poll_cv.notify_all(); }
+    if (n->poll_thread.joinable()) n->poll_thread.join();
     if (n->t3k_active.exchange(false)) t3k::stop();
 }
 /* The first search fires only once the TONE3000 tab is actually shown/touched. */
@@ -1015,6 +1056,23 @@ static void setParameter(AEffect *e, int32_t i, float v) {
     Nam *n = (Nam *)e->object;
     if (i < 0 || i >= NPARAMS) return;
     v = clamp01(v);
+    /* MPC's host sets parameter 0 to the far end of its range and straight back on insert and on every STOP (JUCE's
+     * prepareToPlay, for a plugin without an editor). Parameter 0 is Model, so applied as they came that was two model
+     * loads per STOP. A set of it is held instead: the poll thread loads it once the audio thread begins its next block,
+     * or a read of it, its display text, the state or another model control (MODEL -/+, the BROWSE tab) applies it
+     * first, here. Only the last set counts, so a pair that ends on the model it started from loads nothing. Other
+     * parameters leave it held: they may come from the audio thread (automation), which must not load a model. */
+    if (i == P_MODEL) {
+        n->p[i] = v;
+        n->held_block.store(n->blocks.load());
+        n->held_model.store(v);
+        poll_start(n);
+        { std::lock_guard<std::mutex> lk(n->poll_mtx); }   /* so the poll thread can't miss the wakeup */
+        n->poll_cv.notify_one();
+        return;
+    }
+    if (i == P_MODEL_PREV || i == P_MODEL_NEXT || (i >= P_SLOT_1 && i <= P_MODEL_PAGE_NEXT) ||
+        (i >= P_BROWSE_FILTER && i <= P_BROWSE_DELETE)) flush_model(n);   /* in order: they act on the current model */
     /* Trigger buttons: MPC's skin Button is a toggle (each tap flips 0<->1, no release event), so
      * any flip of the on/off state counts as one press. */
     bool rising = (i == P_MODEL_PREV || i == P_MODEL_NEXT || i == P_CAB_PREV || i == P_CAB_NEXT ||
@@ -1176,14 +1234,7 @@ static void setParameter(AEffect *e, int32_t i, float v) {
         return;
     }
     if (i == P_QUALITY) { if ((v >= 0.5f) != (prev >= 0.5f)) apply_quality(n); return; }
-    if (i == P_MODEL) {
-        std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
-        int nopts = (int)n->names.size();
-        if (nopts > 1) {
-            int idx = (int)lroundf(v * (nopts - 1));
-            if (idx != n->model_idx) { load_index(n, idx); reveal_current(n); ask_redraw(n); }
-        }
-    } else if (i == P_CAB_SELECT) {
+    if (i == P_CAB_SELECT) {
         int nopts = (int)n->cab.names.size();
         if (nopts > 1) {
             int idx = (int)lroundf(v * (nopts - 1));
@@ -1210,6 +1261,7 @@ static float getParameter(AEffect *e, int32_t i) {
     Nam *n = (Nam *)e->object;
     if (i < 0 || i >= NPARAMS) return 0.f;
     if (i == P_MODEL) {
+        flush_model(n);   /* the host reads back the model a held set picked (setParameter) */
         std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
         int nopts = (int)n->names.size();
         return nopts > 1 ? (float)n->model_idx / (nopts - 1) : 0.f;
@@ -1266,6 +1318,7 @@ struct ScopedFlushToZero {   /* restores the host's FPSCR on exit, like JUCE's S
 static void processReplacing(AEffect *e, float **in, float **out, int32_t count) {
     Nam *n = (Nam *)e->object;
     ScopedFlushToZero ftz;
+    n->blocks.fetch_add(1, std::memory_order_relaxed);   /* a held Model set loads now, on the poll thread */
     if ((int32_t)n->mbuf.size() < count) n->mbuf.resize((size_t)count);
     float *mbuf = n->mbuf.data();
     const float *l = in[0], *r = in[1];
@@ -1368,6 +1421,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
         return 1;
     case effGetParamDisplay:
         if (idx == P_MODEL) {
+            flush_model(n);
             std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
             copy_str(p, n->names.empty() ? "(none)" : base_of(n->names[(size_t)n->model_idx]).c_str(), 64);
         }
@@ -1434,6 +1488,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
         return 1;
     case effSetSampleRate:
         n->sr = o > 0 ? o : 44100.0;
+        flush_model(n);
         load_index(n, n->model_idx);              /* re-Reset the model at the new rate */
         n->tone.lastBass = n->tone.lastMid = n->tone.lastTreb = 1e9f;   /* force coeff recompute */
         n->delay.buf.clear();                      /* resized lazily at the new rate */
@@ -1443,6 +1498,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
     case effCanDo:
         return !strcmp((char *)p, "receiveVstTimeInfo") ? 1 : -1;
     case effGetChunk: {
+        flush_model(n);
         std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
         std::string s;
         s += "model=" + (n->names.empty() ? std::string() : n->names[(size_t)n->model_idx]) + "\n";
@@ -1463,6 +1519,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
     }
     case effSetChunk: {
         if (v <= 0) return 0;
+        n->held_model.store(-1.f);   /* the state sets the model too */
         std::string s((const char *)p, std::min((size_t)v, sizeof(n->chunk) - 1));
         if (s.find('=') == std::string::npos) {   /* bare model name */
             for (size_t k = 0; k < n->names.size(); k++)
