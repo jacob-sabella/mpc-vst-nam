@@ -19,12 +19,12 @@ on:
 
 jobs:
   vst:
-    uses: open-mpc/mpc-vst-plugins/.github/workflows/vst-release.yml@8ace10a277784689c6d0e3281c0e8d6ddc14e220
+    uses: open-mpc/mpc-vst-plugins/.github/workflows/vst-release.yml@f1528a35fbe19ba759957060af6801975977ceca
     permissions: { contents: write }
     with:
       tag: nam-vst-v${{ inputs.version }}
       version: ${{ inputs.version }}
-      tools_ref: 8ace10a277784689c6d0e3281c0e8d6ddc14e220
+      tools_ref: f1528a35fbe19ba759957060af6801975977ceca
       vst_dir: vst
       # NAM_VERSION stamps the version into the plugin (scripts/version.py); the checkout has no tags to describe.
       # The skin is built in the MPC OS 2.x shape, which 3.x reads too (vst/gen_skin.sh).
