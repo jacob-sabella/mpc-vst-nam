@@ -2,7 +2,7 @@ name: Build
 
 # Device build — runs on every push to main and produces the armhf nam_vst.so, its MPC skin and
 # the pluginList entry as a downloadable artifact (same payload as scripts/deploy.sh pushes).
-# The plugin is compiled in arm32v7/gcc:11-bullseye (glibc 2.31) under QEMU, exactly as vst/build.sh does locally, and
+# The plugin is compiled for armhf (arm32v7/gcc:11-bullseye, glibc 2.31) and aarch64 under QEMU, exactly as vst/build.sh does locally, and
 # the skin is generated with mpc-vst-plugins pinned to the same commit as release.yml.
 # Releases are handled by release.yml.
 
@@ -38,10 +38,10 @@ jobs:
           ref: ${{ env.MPC_VST_REF }}
           path: mpc-vst-plugins
 
-      - name: Set up QEMU (armhf emulation)
+      - name: Set up QEMU (armhf and aarch64 emulation; release_build.sh builds both)
         uses: docker/setup-qemu-action@v4
         with:
-          platforms: arm
+          platforms: arm,arm64
 
       - name: Install Pillow (skin)
         run: python3 -m pip install --quiet pillow
@@ -65,11 +65,25 @@ jobs:
           cp -r port/vst/build/skin/* "$STAGE/"
           cp port/README.md port/LICENSE "$STAGE/"
           tar -C dist -czf nam-vst-mpc-armv7.tar.gz "$(basename "$STAGE")"
+          A64="dist/nam-vst-${GITHUB_SHA::7}-mpc-aarch64"
+          mkdir -p "$A64"
+          cp port/vst/build/aarch64/nam_vst.so port/vst/build/pluginlist-entry.xml "$A64/"
+          cp -r port/vst/build/skin/* "$A64/"
+          cp port/README.md port/LICENSE "$A64/"
+          tar -C dist -czf nam-vst-mpc-aarch64.tar.gz "$(basename "$A64")"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: nam-vst-mpc-armv7
           path: nam-vst-mpc-armv7.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload artifact (aarch64)
+        uses: actions/upload-artifact@v7
+        with:
+          name: nam-vst-mpc-aarch64
+          path: nam-vst-mpc-aarch64.tar.gz
           if-no-files-found: error
           retention-days: 14
