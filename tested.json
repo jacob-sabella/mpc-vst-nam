@@ -1,5 +1,7 @@
 [
   {"version": "1.0.10", "device": "MPC Key 37", "firmware": "3.10.1.12", "date": "2026-11-12"},
   {"version": "1.0.11", "device": "MPC Key 37", "firmware": "3.10.1.12", "date": "2026-11-12"},
-  {"version": "1.1.0", "device": "MPC Sample", "firmware": "1.3.0.12", "date": "2026-11-13"}
+  {"version": "1.1.0", "device": "MPC Sample", "firmware": "1.3.0.12", "date": "2026-11-13"},
+  {"version": "1.1.1", "device": "MPC Key 37", "firmware": "3.10.1.12", "date": "2026-11-15"},
+  {"version": "1.1.2", "device": "MPC Key 37", "firmware": "3.10.1.12", "date": "2026-11-16"}
 ]
