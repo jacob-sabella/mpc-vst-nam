@@ -184,7 +184,8 @@ int main(int argc, char **argv) {
 
     /* Model is parameter 0, and MPC's host sets parameter 0 to the far end of its range and straight back (0.0 instead
      * when it is at 0.5 or more) on insert and on every STOP. That pair must load no model; a real change (a Q-Link, the
-     * data wheel, the skin) still loads, at the next block or when the host reads it back. A second instance, on a
+     * data wheel, the skin) still loads, at the next block or within 50 ms; a read of it reports the new model without
+     * loading it, since MPC 3.10 reads it back between the two sets on insert. A second instance, on a
      * folder of three models, watched with inotify for which .nam files get opened. */
     char base[] = "/tmp/nam_host_test.XXXXXX", mdir[64], path[96];
     const char *models[3] = {"a", "b", "c"};
@@ -210,12 +211,26 @@ int main(int argc, char **argv) {
             {"host nudge, no blocks", 0, 1, 0, 0, 0, "a"},
             {"a set, no blocks or reads", 1.f, 0, 0, 0, 1, "c"},
             {"host nudge, read back at once", 0, 1, 0, 1, 0, "c"},
+            {"host nudge read back in between", 0, 2, 0, 1, 0, "c"},   /* MPC 3.10 on insert */
+            {"host nudge read back in between, then blocks", 0, 2, 1, 0, 0, "c"},
         };
         for (unsigned k = 0; k < sizeof steps / sizeof steps[0]; k++) {
             float old = m->getParameter(m, 0), want_v = steps[k].nudge ? old : steps[k].to;
             nam_loads(ifd, which, sizeof which);   /* drop anything before */
             which[0] = 0;
-            if (steps[k].nudge) { m->setParameter(m, 0, old < 0.5f ? 1.f : 0.f); m->setParameter(m, 0, old); }
+            if (steps[k].nudge) {
+                m->setParameter(m, 0, old < 0.5f ? 1.f : 0.f);
+                if (steps[k].nudge == 2) {   /* as MPC 3.10 does on insert: read it back, set it back 17 ms later */
+                    float mid = m->getParameter(m, 0);
+                    memset(t, 0, sizeof t);
+                    m->dispatcher(m, effGetParamDisplay, 0, 0, t, 0);
+                    if (fabsf(mid - (old < 0.5f ? 1.f : 0.f)) > 1e-6f || strcmp(t, old < 0.5f ? "c" : "a")) {
+                        printf("model      = %-2s %.1f read back mid-nudge BAD\n", t, mid); fail = 1;
+                    }
+                    usleep(17000);
+                }
+                m->setParameter(m, 0, old);
+            }
             else m->setParameter(m, 0, steps[k].to);
             if (steps[k].blocks) run_blocks(m, in, out, 120);
             else if (!steps[k].read_back) usleep(120000);   /* the poll thread applies it on its own */
@@ -223,6 +238,8 @@ int main(int argc, char **argv) {
             float got = m->getParameter(m, 0);
             memset(t, 0, sizeof t);
             m->dispatcher(m, effGetParamDisplay, 0, 0, t, 0);
+            if (steps[k].read_back && nam_loads(ifd, which, sizeof which)) { printf("model      = a read loaded BAD\n"); fail = 1; }
+            usleep(120000);   /* a read reports a held set without loading it; the poll thread loads it */
             loads += nam_loads(ifd, which, sizeof which);
             int ok = loads == steps[k].want_loads && fabsf(got - want_v) < 1e-6f && !strcmp(t, steps[k].want);
             printf("model      = %-2s %.1f after %s, %d load%s%s%s %s\n", t, got, steps[k].what, loads, loads == 1 ? "" : "s",

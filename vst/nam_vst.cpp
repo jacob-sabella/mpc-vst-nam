@@ -583,6 +583,7 @@ struct Nam {
      * (see setParameter); -1 = none held. blocks counts blocks begun; held_block is that count when it was set. */
     std::atomic<float> held_model{-1.f};
     std::atomic<unsigned> blocks{0}, held_block{0};
+    double dsp_sr = 0;   /* the rate the loaded model was Reset at (load_index), under lib_mtx */
 #ifdef NAM_SAMPLE_PAGE
     sdc_page page;
     float in_show = 0.f, out_show = 0.f;   /* the page's falling meters, dBFS-mapped 0..1 */
@@ -654,7 +655,9 @@ static void load_index(Nam *n, int idx) {
         if (auto *slim = dynamic_cast<nam::SlimmableModel *>(fresh.get()))
             slim->SetSlimmableSize(n->p[P_QUALITY] >= 0.5f ? 1.0 : 0.0);
         if (fresh) fresh->Reset(n->sr, MAXBLOCK);
+        n->dsp_sr = fresh ? n->sr : 0;
     } catch (...) {
+        n->dsp_sr = 0;
         fresh.reset();
     }
     std::lock_guard<std::mutex> lk(n->dsp_mtx);
@@ -1013,6 +1016,15 @@ static void flush_model(Nam *n) {
     }
     if (loaded) ask_redraw(n);
 }
+/* The model a read of Model reports: the held set's, if any, else the loaded one. Under lib_mtx. A read never loads
+ * the held set: MPC's host reads parameter 0 straight back between the two sets of its nudge. */
+static int shown_model_idx(Nam *n) {
+    int nopts = (int)n->names.size();
+    float v = n->held_model.load();
+    if (v < 0.f || nopts < 2) return n->model_idx;
+    int idx = (int)lroundf(v * (nopts - 1));
+    return idx < 0 ? 0 : idx >= nopts ? nopts - 1 : idx;
+}
 /* Poll thread: a held Model set waits until the audio thread begins a block after it (50 ms at most, for when no audio
  * runs), then loads here: the load reads a file and builds the model, which the audio thread must never do. */
 static void apply_held_model(Nam *n) {
@@ -1065,9 +1077,11 @@ static void setParameter(AEffect *e, int32_t i, float v) {
     v = clamp01(v);
     /* MPC's host sets parameter 0 to the far end of its range and straight back on insert and on every STOP (JUCE's
      * prepareToPlay, for a plugin without an editor). Parameter 0 is Model, so applied as they came that was two model
-     * loads per STOP. A set of it is held instead: the poll thread loads it once the audio thread begins its next block,
-     * or a read of it, its display text, the state or another model control (MODEL -/+, the BROWSE tab) applies it
-     * first, here. Only the last set counts, so a pair that ends on the model it started from loads nothing. Other
+     * loads per STOP. A set of it is held instead: the poll thread loads it once the audio thread begins its next block
+     * (50 ms at most), or the state, a sample-rate change or another model control (MODEL -/+, the BROWSE tab) applies
+     * it first. A read of it (its value, its display text) reports the held model without loading it, since on insert
+     * MPC 3.10 reads it back between the two sets, 17 ms apart, before any block. Only the last set counts, so a pair
+     * that ends on the model it started from loads nothing. Other
      * parameters leave it held: they may come from the audio thread (automation), which must not load a model. */
     if (i == P_MODEL) {
         n->p[i] = v;
@@ -1267,11 +1281,10 @@ static void setParameter(AEffect *e, int32_t i, float v) {
 static float getParameter(AEffect *e, int32_t i) {
     Nam *n = (Nam *)e->object;
     if (i < 0 || i >= NPARAMS) return 0.f;
-    if (i == P_MODEL) {
-        flush_model(n);   /* the host reads back the model a held set picked (setParameter) */
+    if (i == P_MODEL) {   /* a held set reads back as the model it picked, without loading it (setParameter) */
         std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
         int nopts = (int)n->names.size();
-        return nopts > 1 ? (float)n->model_idx / (nopts - 1) : 0.f;
+        return nopts > 1 ? (float)shown_model_idx(n) / (nopts - 1) : 0.f;
     }
     if (i == P_CAB_SELECT) {
         int nopts = (int)n->cab.names.size();
@@ -1427,10 +1440,9 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
         copy_str(p, (idx >= 0 && idx < NPARAMS) ? PINFO[idx].unit : "", 8);
         return 1;
     case effGetParamDisplay:
-        if (idx == P_MODEL) {
-            flush_model(n);
+        if (idx == P_MODEL) {   /* a held set's model, not loaded yet (setParameter) */
             std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
-            copy_str(p, n->names.empty() ? "(none)" : base_of(n->names[(size_t)n->model_idx]).c_str(), 64);
+            copy_str(p, n->names.empty() ? "(none)" : base_of(n->names[(size_t)shown_model_idx(n)]).c_str(), 64);
         }
         else if (idx == P_CAB_SELECT) copy_str(p, n->cab.names.empty() ? "(none)" : n->cab.names[(size_t)n->cab.idx].c_str(), 24);
         else if (idx == P_CAB_ON || idx == P_PITCH_ON) copy_str(p, n->p[idx] >= 0.5f ? "On" : "Off", 8);
@@ -1496,7 +1508,11 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
     case effSetSampleRate:
         n->sr = o > 0 ? o : 44100.0;
         flush_model(n);
-        load_index(n, n->model_idx);              /* re-Reset the model at the new rate */
+        {   /* re-Reset the model at a new rate. MPC's host sends the same rate several times on insert, and each
+             * load reads the file and builds the model (~45 ms on a Key 37), so only a change reloads. */
+            std::lock_guard<std::recursive_mutex> lk(n->lib_mtx);
+            if (n->dsp_sr != n->sr) load_index(n, n->model_idx);
+        }
         n->tone.lastBass = n->tone.lastMid = n->tone.lastTreb = 1e9f;   /* force coeff recompute */
         n->delay.buf.clear();                      /* resized lazily at the new rate */
         return 1;
