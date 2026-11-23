@@ -19,7 +19,7 @@ on:
 
 jobs:
   vst:
-    uses: open-mpc/mpc-vst-plugins/.github/workflows/vst-release.yml@f1528a35fbe19ba759957060af6801975977ceca
+    uses: open-mpc/mpc-vst-plugins/.github/workflows/vst-release.yml@799ac3071a9db51bdc8a34726edc2077de3367c0
     permissions: { contents: write }
     with:
       tag: nam-vst-v${{ inputs.version }}
